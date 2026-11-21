@@ -575,7 +575,7 @@ impl PrisonApp {
                     self.open_stop();
                 }
                 if ui.add(primary(if b.status.active { "Extend" } else { "Start" })).clicked() {
-                    self.start = Some(StartDialog { hours: 1, minutes: 0, until_mode: false, until_text: fmt_input(now + engine::HOUR), error: String::new() });
+                    self.start = Some(StartDialog { hours: 0, minutes: 0, until_mode: false, until_text: fmt_input(now + engine::HOUR), error: String::new() });
                 }
             });
         });
@@ -913,6 +913,15 @@ impl PrisonApp {
                     ui.radio_value(&mut d.until_mode, false, "For");
                     ui.add(egui::DragValue::new(&mut d.hours).range(0..=8784).suffix(" h"));
                     ui.add(egui::DragValue::new(&mut d.minutes).range(0..=59).suffix(" min"));
+                    // Nudge the length by five minutes at a time.
+                    for (label, step) in [("+5m", 5i64), ("-5m", -5)] {
+                        if ui.button(label).clicked() {
+                            let total = (d.hours as i64 * 60 + d.minutes as i64 + step).clamp(0, 8784 * 60);
+                            d.hours = (total / 60) as u32;
+                            d.minutes = (total % 60) as u32;
+                            d.until_mode = false;
+                        }
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.radio_value(&mut d.until_mode, true, "Until");

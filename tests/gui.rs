@@ -111,6 +111,25 @@ fn run(hosts: &std::path::Path) {
     eprintln!("• start for 30 minutes from the dialog");
     h.get_by_label("Start").click();
     h.run_steps(3);
+    let len = |h: &Harness<'static, PrisonApp>| format!("{} {}", h.get_by_label("h").value().unwrap_or_default(), h.get_by_label("min").value().unwrap_or_default());
+    assert_eq!(len(&h), "0 h 0 min", "starts at zero");
+    h.get_by_label("+5m").click();
+    h.run_steps(2);
+    h.get_by_label("+5m").click();
+    h.run_steps(2);
+    h.get_by_label("-5m").click();
+    h.run_steps(2);
+    assert_eq!(len(&h), "0 h 5 min", "+5m +5m -5m");
+    h.get_by_label("-5m").click();
+    h.run_steps(2);
+    h.get_by_label("-5m").click();
+    h.run_steps(2);
+    assert_eq!(len(&h), "0 h 0 min", "never below zero");
+    for _ in 0..13 {
+        h.get_by_label("+5m").click();
+        h.run_steps(2);
+    }
+    assert_eq!(len(&h), "1 h 5 min", "minutes roll over into hours");
     h.get_by_label("30 min").click();
     h.run_steps(2);
     h.get_by_label("Start block").click();
