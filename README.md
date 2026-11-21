@@ -176,6 +176,11 @@ Code layout:
 | `src/gui.rs` | The settings window. |
 | `src/autostart.rs` | Start at login (Run key, LaunchAgent, XDG autostart). |
 
+## Roadmap
+
+What's planned next, including bringing back the random-characters lock as an option, is in
+[ROADMAP.md](ROADMAP.md).
+
 ## Credits
 
 The word list for the random-words lock is the [EFF short diceware list](https://www.eff.org/dice)
