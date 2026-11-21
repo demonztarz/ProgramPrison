@@ -20,14 +20,14 @@ pub fn run_service() {
         }
         resp
     }) {
-        util::debug(format!("could not start: {e}"));
+        util::log(format!("blocker could not start: {e}"));
         return;
     }
     {
         let s = svc.lock().unwrap();
         crate::autostart::apply(s.state.settings.start_at_login);
     }
-    util::debug("service started");
+    util::log("blocker started");
     let tick = Duration::from_millis(std::env::var("PROGRAMPRISON_TICK_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(3000));
     loop {
         let close = {

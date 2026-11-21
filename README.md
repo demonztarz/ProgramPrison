@@ -49,8 +49,40 @@ right-click the app and choose **Open** the first time.
   - Undoes hand edits to the hosts file within seconds.
   - Pushes running blocks back if the clock is moved forward.
   - Website blocks stay in the hosts file even if ProgramPrison is force-closed.
-  - Blocks resume the moment it starts again. On macOS it's also restarted automatically if it's
-    force-quit.
+  - Blocks resume the moment it starts again.
+  - It can still be ended from Task Manager in an emergency (see [Emergency exit](#emergency-exit)).
+
+## How to use it
+
+1. **Put the program somewhere permanent** (for example `Documents\ProgramPrison`) and run it.
+   It starts itself at login from wherever it is. The window opens, and an orange bars icon
+   appears in the system tray (click **^** near the clock if you don't see it).
+2. **Make a block**: **Create your first block** (later: **+ New block**). Click its name at
+   the top to rename it.
+3. **Websites tab**: type a site or paste a link, then **Add**, or use **Quick add**. The first
+   time, click **Set up website blocking** in the orange bar and answer **Yes** to the
+   administrator prompt. That's needed once only.
+4. **Programs tab**: type a name (`steam.exe`, `Discord`) and **Add**, or pick a running one.
+   Choose **Close it** or **Cover its windows** for each.
+5. **Turn it on**:
+   - **Start** → pick a length, or **Until** a time → **Start block**.
+   - Or paint hours on the **Schedule** tab to make it switch on by itself every week.
+6. **Lock it** (optional): on the **Lock** tab choose Random text, Password or Locked, then
+   **Save lock**.
+
+Closing the window keeps blocking. Left-click the tray icon (or run the program again) to
+reopen it. Right-click the tray icon for **Quit**, which is disabled while a locked block is on.
+
+### Emergency exit
+
+If you really need out, ProgramPrison can always be ended from **Task Manager** (Ctrl+Shift+Esc;
+on macOS, Activity Monitor → Force Quit). Nothing restarts it until you next log in.
+
+- **Programs** are allowed again straight away.
+- **Websites stay blocked** until the block's time is up: they're listed in the system hosts
+  file, which ProgramPrison cleans up the next time it runs after the block has ended.
+- To keep it from starting again at your next login, open Task Manager → **Startup apps** and
+  disable ProgramPrison.
 
 ## How it's built
 

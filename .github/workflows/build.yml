@@ -70,6 +70,15 @@ jobs:
           Start-Process -FilePath target\release\programprison.exe -ArgumentList "--self-test=$json" -Wait
           Get-Content $json
           if (-not (Get-Content $json | ConvertFrom-Json).ok) { throw "self-test failed" }
+          # Open the real window on a fresh machine and time the first screen.
+          $env:PROGRAMPRISON_DATA = Join-Path $env:RUNNER_TEMP "ppdata"
+          $smoke = Join-Path $env:RUNNER_TEMP "smoke.json"
+          $p = Start-Process -FilePath target\release\programprison.exe -ArgumentList "--gui-smoke=$smoke" -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); Get-Content "$env:PROGRAMPRISON_DATA\programprison.log"; throw "window did not draw within 60 s" }
+          Get-Content $smoke
+          Get-Content "$env:PROGRAMPRISON_DATA\programprison.log"
+          if (-not (Get-Content $smoke | ConvertFrom-Json).ok) { throw "window smoke test failed" }
+          Stop-Process -Name programprison -Force -ErrorAction SilentlyContinue
 
       - name: Build (macOS, universal app)
         if: matrix.name == 'macos'

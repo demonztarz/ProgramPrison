@@ -29,6 +29,23 @@ pub fn debug(msg: impl AsRef<str>) {
     }
 }
 
+/// A short log of what happened (start-up times, errors), kept in the data folder as
+/// programprison.log so problems on someone's computer can be looked into. Kept under 256 KB.
+pub fn log(msg: impl AsRef<str>) {
+    use std::io::Write;
+    let path = data_dir().join("programprison.log");
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 256 * 1024) {
+        let _ = std::fs::rename(&path, path.with_extension("old.log"));
+    }
+    let _ = std::fs::create_dir_all(data_dir());
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        use chrono::{Local, TimeZone};
+        let t = Local.timestamp_millis_opt(crate::engine::now_ms()).single().map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string()).unwrap_or_default();
+        let _ = writeln!(f, "{t} [{}] {}", std::process::id(), msg.as_ref());
+    }
+    debug(msg);
+}
+
 /// A command that never opens a console window on Windows.
 pub fn command(program: &str) -> Command {
     #[allow(unused_mut)]

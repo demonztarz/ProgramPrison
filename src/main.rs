@@ -7,8 +7,10 @@ fn main() {
         programprison::platform::run_service();
     } else if let Some(out) = args.iter().find_map(|a| a.strip_prefix("--self-test=")) {
         self_test(out);
+    } else if let Some(out) = args.iter().find_map(|a| a.strip_prefix("--gui-smoke=")) {
+        programprison::gui::run(Some(out.to_string()));
     } else {
-        programprison::gui::run();
+        programprison::gui::run(None);
     }
 }
 

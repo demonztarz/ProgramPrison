@@ -61,6 +61,17 @@ pub struct PrisonApp {
     setup: Option<mpsc::Receiver<Response>>,
     pub offline: Option<String>,
     shown_requests: Option<u32>,
+    /// Fresh state from the background poller (the window itself never waits on the blocker).
+    poll_rx: Option<mpsc::Receiver<Result<PublicState, String>>>,
+    frames: u64,
+    smoke: Option<Smoke>,
+}
+
+/// --gui-smoke: report how long the first screen took, then close.
+pub struct Smoke {
+    pub out: String,
+    pub started: Instant,
+    pub connected_ms: u128,
 }
 
 // ---------- colors ----------
@@ -140,8 +151,39 @@ impl PrisonApp {
             setup: None,
             offline: None,
             shown_requests: None,
+            poll_rx: None,
+            frames: 0,
+            smoke: None,
         };
         app.poll();
+        app
+    }
+
+    /// For the real window: state is fetched on a background thread once a second, so a slow
+    /// or busy blocker can never freeze the window.
+    pub fn with_background_poll(conn: Conn, ctx: &egui::Context) -> PrisonApp {
+        let (tx, rx) = mpsc::channel();
+        let (c, ctx) = (conn.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            loop {
+                let r = c(&Request::GetState).and_then(|r| r.state.ok_or_else(|| "no state".to_string()));
+                if tx.send(r).is_err() {
+                    return; // window closed
+                }
+                ctx.request_repaint();
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        });
+        let mut app = PrisonApp::new_without_poll(conn);
+        app.poll_rx = Some(rx);
+        app
+    }
+
+    fn new_without_poll(conn: Conn) -> PrisonApp {
+        let failing: Conn = Arc::new(|_| Err("not yet".into()));
+        let mut app = PrisonApp::new(failing);
+        app.conn = conn;
+        app.offline = None;
         app
     }
 
@@ -351,8 +393,33 @@ impl PrisonApp {
     /// The whole window. Public so tests can drive it.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        if self.last_poll.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) && self.paint.is_none() {
+        self.frames += 1;
+        if let Some(rx) = &self.poll_rx {
+            let mut latest = None;
+            while let Ok(r) = rx.try_recv() {
+                latest = Some(r);
+            }
+            match latest {
+                Some(Ok(s)) if self.paint.is_none() => {
+                    self.offline = None;
+                    self.set_state(s);
+                }
+                Some(Err(e)) => self.offline = Some(e),
+                _ => {}
+            }
+        } else if self.last_poll.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) && self.paint.is_none() {
             self.poll();
+        }
+        if self.frames == 2 {
+            if let Some(s) = &self.smoke {
+                let ms = s.started.elapsed().as_millis();
+                crate::util::log(format!("window: first screen drawn after {ms} ms"));
+                let report = serde_json::json!({ "ok": true, "connectedMs": s.connected_ms, "firstFrameMs": ms, "stateLoaded": self.state.is_some() });
+                let _ = std::fs::write(&s.out, report.to_string());
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else {
+                crate::util::log("window: first screen drawn");
+            }
         }
         if let Some(rx) = &self.setup
             && let Ok(r) = rx.try_recv() {
@@ -1247,8 +1314,10 @@ pub fn connect_or_start() -> Option<Client> {
         return Some(c);
     }
     let exe = std::env::current_exe().ok()?;
+    crate::util::log("window: blocker not running, starting it");
     let _ = crate::util::command(&exe.display().to_string()).arg("--service").spawn();
-    let end = Instant::now() + Duration::from_secs(6);
+    // The first run can be slow while antivirus checks the new program.
+    let end = Instant::now() + Duration::from_secs(30);
     while Instant::now() < end {
         std::thread::sleep(Duration::from_millis(100));
         if let Some(c) = Client::connect() {
@@ -1258,11 +1327,15 @@ pub fn connect_or_start() -> Option<Client> {
     None
 }
 
-pub fn run() {
+pub fn run(smoke_out: Option<String>) {
+    let started = Instant::now();
+    crate::util::log("window: starting");
     let Some(client) = connect_or_start() else {
-        crate::util::debug("window: could not reach or start the blocker");
+        crate::util::log("window: could not reach or start the blocker");
         return;
     };
+    let connected_ms = started.elapsed().as_millis();
+    crate::util::log(format!("window: blocker reached after {connected_ms} ms"));
     // Only one settings window: if one is open already, bring it forward and stop here.
     let _window_lock = match window_lock() {
         Some(lock) => lock,
@@ -1282,12 +1355,17 @@ pub fn run() {
             .with_icon(egui::IconData { rgba: icon_rgba(64), width: 64, height: 64 }),
         ..Default::default()
     };
-    let _ = eframe::run_native(
+    let result = eframe::run_native(
         "ProgramPrison",
         options,
         Box::new(move |cc| {
             setup_style(&cc.egui_ctx);
-            Ok(Box::new(PrisonApp::new(conn)))
+            let mut app = PrisonApp::with_background_poll(conn, &cc.egui_ctx);
+            app.smoke = smoke_out.map(|out| Smoke { out, started, connected_ms });
+            Ok(Box::new(app))
         }),
     );
+    if let Err(e) = result {
+        crate::util::log(format!("window: could not open: {e}"));
+    }
 }

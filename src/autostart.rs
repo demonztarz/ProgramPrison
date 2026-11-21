@@ -27,7 +27,8 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    // A LaunchAgent with KeepAlive also restarts the blocker if it's force-quit.
+    // Starts at login only. Deliberately not restarted after a force-quit: that stays
+    // available as an emergency way out (Activity Monitor → Force Quit).
     pub fn apply(on: bool, exe: &str) {
         let Some(home) = std::env::var_os("HOME") else { return };
         let dir = std::path::Path::new(&home).join("Library/LaunchAgents");
@@ -40,7 +41,6 @@ mod imp {
 <key>Label</key><string>app.programprison</string>
 <key>ProgramArguments</key><array><string>{exe}</string><string>--service</string></array>
 <key>RunAtLoad</key><true/>
-<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 </dict></plist>
 "#
             );
