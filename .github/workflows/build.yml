@@ -75,8 +75,9 @@ jobs:
           $smoke = Join-Path $env:RUNNER_TEMP "smoke.json"
           $p = Start-Process -FilePath target\release\programprison.exe -ArgumentList "--gui-smoke=$smoke" -PassThru
           if (-not $p.WaitForExit(60000)) { $p.Kill(); Get-Content "$env:PROGRAMPRISON_DATA\programprison.log"; throw "window did not draw within 60 s" }
-          Get-Content $smoke
           Get-Content "$env:PROGRAMPRISON_DATA\programprison.log"
+          if (-not (Test-Path $smoke)) { throw "the window closed without drawing (log above)" }
+          Get-Content $smoke
           if (-not (Get-Content $smoke | ConvertFrom-Json).ok) { throw "window smoke test failed" }
           Stop-Process -Name programprison -Force -ErrorAction SilentlyContinue
 
