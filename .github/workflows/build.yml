@@ -15,6 +15,9 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     strategy:
@@ -22,32 +25,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Unit tests
-        run: npm test
-      - name: End-to-end test (real app, Linux)
-        if: runner.os == 'Linux'
-        timeout-minutes: 8
-        # Ubuntu 24.04+ restricts the user namespaces Chromium's sandbox needs.
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          xvfb-run -a -s "-screen 0 1400x900x24" npm run test:e2e
-      - name: End-to-end test (real app, includes window covering on Windows)
-        if: runner.os != 'Linux'
-        timeout-minutes: 8
-        run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots-${{ runner.os }}
-          path: test-results/
-          if-no-files-found: ignore
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Unit tests, the background blocker end to end (on Windows: covering Notepad), and a
+      # headless click-through of the settings window.
+      - name: Tests
+        run: cargo test -- --nocapture
+        timeout-minutes: 15
 
   package:
     needs: test
@@ -56,40 +43,81 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            args: --win nsis portable --x64
-            files: dist/*.exe
+            name: windows
           - os: macos-latest
-            args: --mac dmg
-            files: dist/*.dmg
+            name: macos
           - os: ubuntu-latest
-            args: --linux AppImage
-            files: dist/*.AppImage
+            name: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Package
-        run: npx electron-builder ${{ matrix.args }} --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Self-test the packaged Windows app
-        if: runner.os == 'Windows'
+          targets: ${{ matrix.name == 'macos' && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_ENV"
+
+      - name: Build (Windows)
+        if: matrix.name == 'windows'
         shell: pwsh
         run: |
-          $exe = "dist\win-unpacked\ProgramPrison.exe"
-          $out = Join-Path $env:RUNNER_TEMP "selftest.json"
-          Start-Process -FilePath $exe -ArgumentList "--self-test=$out" -Wait
-          Get-Content $out
-          $r = Get-Content $out | ConvertFrom-Json
-          if (-not $r.ok -or -not $r.nativeProcessList) { throw "packaged self-test failed" }
+          cargo build --release
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item target\release\programprison.exe "out\ProgramPrison-$env:VERSION-windows-x64.exe"
+          $json = Join-Path $env:RUNNER_TEMP "selftest.json"
+          Start-Process -FilePath target\release\programprison.exe -ArgumentList "--self-test=$json" -Wait
+          Get-Content $json
+          if (-not (Get-Content $json | ConvertFrom-Json).ok) { throw "self-test failed" }
+
+      - name: Build (macOS, universal app)
+        if: matrix.name == 'macos'
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          APP=out/ProgramPrison.app
+          mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
+          lipo -create -output $APP/Contents/MacOS/programprison target/aarch64-apple-darwin/release/programprison target/x86_64-apple-darwin/release/programprison
+          mkdir icon.iconset
+          for s in 16 32 128 256; do
+            sips -z $s $s assets/icon-256.png --out icon.iconset/icon_${s}x${s}.png >/dev/null
+            sips -z $((s*2)) $((s*2)) assets/icon-256.png --out icon.iconset/icon_${s}x${s}@2x.png >/dev/null
+          done
+          iconutil -c icns icon.iconset -o $APP/Contents/Resources/ProgramPrison.icns
+          cat > $APP/Contents/Info.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>ProgramPrison</string>
+          <key>CFBundleDisplayName</key><string>ProgramPrison</string>
+          <key>CFBundleIdentifier</key><string>app.programprison</string>
+          <key>CFBundleVersion</key><string>$VERSION</string>
+          <key>CFBundleShortVersionString</key><string>$VERSION</string>
+          <key>CFBundleExecutable</key><string>programprison</string>
+          <key>CFBundleIconFile</key><string>ProgramPrison</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>NSHighResolutionCapable</key><true/>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          </dict></plist>
+          EOF
+          $APP/Contents/MacOS/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
+          cd out && ditto -c -k --keepParent ProgramPrison.app "ProgramPrison-$VERSION-macos.zip" && rm -rf ProgramPrison.app
+
+      - name: Build (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          cargo build --release
+          ./target/release/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
+          mkdir -p out/ProgramPrison
+          cp target/release/programprison README.md assets/icon-256.png out/ProgramPrison/
+          tar -C out -czf "out/ProgramPrison-$VERSION-linux-x64.tar.gz" ProgramPrison
+          rm -rf out/ProgramPrison
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ProgramPrison-${{ runner.os }}
-          path: ${{ matrix.files }}
+          name: ProgramPrison-${{ matrix.name }}
+          path: out/*
           if-no-files-found: error
 
   release:

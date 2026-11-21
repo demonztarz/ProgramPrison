@@ -4,20 +4,24 @@ A desktop blocker for distracting websites and programs, for Windows, macOS and 
 sites and programs in a **block**, switch it on with a timer or a weekly schedule, and lock it so
 you can't back out halfway.
 
+Written in Rust. The background blocker uses about **5 MB of memory** and no CPU worth
+measuring. The whole app is a single file of around 10 MB, with no runtime to install.
+
 > Alpha. It works and is tested on every push, but expect rough edges. Please report them.
 
 ## Download
 
-Every push builds installers with GitHub Actions (**Actions → Build → Artifacts**):
+Every push builds the app with GitHub Actions (**Actions → Build → Artifacts**):
 
 | Platform | File |
 |---|---|
-| Windows | `ProgramPrison-<version>-setup.exe` (installer) or `ProgramPrison-<version>-portable.exe` |
-| macOS | `ProgramPrison-<version>-mac-*.dmg` (unsigned: right-click → Open the first time) |
-| Linux | `ProgramPrison-<version>-linux-x86_64.AppImage` |
+| Windows | `ProgramPrison-<version>-windows-x64.exe`: a single file, no installer |
+| macOS | `ProgramPrison-<version>-macos.zip`: unzip and move `ProgramPrison.app` to Applications |
+| Linux | `ProgramPrison-<version>-linux-x64.tar.gz` |
 
-Pushing a tag such as `v0.1.0` publishes the same files as a GitHub Release. The builds aren't
-code-signed, so Windows SmartScreen will warn: choose **More info → Run anyway**.
+Pushing a tag such as `v0.2.0` publishes the same files as a GitHub Release. The builds aren't
+code-signed. On Windows, SmartScreen will warn: choose **More info → Run anyway**. On macOS,
+right-click the app and choose **Open** the first time.
 
 ## What it does
 
@@ -26,99 +30,116 @@ code-signed, so Windows SmartScreen will warn: choose **More info → Run anyway
   Quick-add lists for social media, video, news, shopping and gaming. Works in every browser.
 - **Programs**: type a name (`steam.exe`, `Discord`) or pick one that's running. For each, choose:
   - **Close it**: the program is closed whenever it starts.
-  - **Cover its windows** (Windows): an overlay the exact size of each of the program's windows
-    sits on top of it and follows it when it moves, resizes or minimizes. The program keeps
-    running underneath. Switching to it brings the cover to the front, so keys go to the cover.
-- **When**: start a block *for* a time (15 min to a year) or *until* a date and time, or paint the
-  hours of the week it should switch on by itself.
+  - **Cover its windows** (Windows): a cover the exact size of each of the program's windows sits
+    on top of it and follows it when it moves, resizes or minimizes. The program keeps running
+    underneath. Switching to it brings the cover to the front; if Windows won't allow that, the
+    program is minimized instead.
+- **When**: start a block *for* a time (15 minutes up to a year) or *until* a date and time, or
+  paint the hours of the week it should switch on by itself.
 - **Locks**: what it takes to stop a block early.
   - *No lock*: stop any time.
-  - *Random text*: type N random characters by hand. Copy and paste are off, and a new text is
-    shown after every wrong try.
+  - *Random text*: type N random characters by hand. Pasting is blocked, and a new text appears
+    after every wrong try.
   - *Password*: have someone else set it. Stored as a salted scrypt hash.
   - *Locked*: no way out until time runs out.
-  While a block is locked you can **add** sites, programs and hours, but not remove them,
-  weaken the lock, delete the block, or quit the app.
+  While a block is locked you can **add** sites, programs and hours, but you can't remove them,
+  weaken the lock, delete the block, quit ProgramPrison or turn off start-at-login.
 - **Hard to get around**:
   - Starts at login.
-  - Closing the window keeps it running in the tray.
   - Undoes hand edits to the hosts file within seconds.
   - Pushes running blocks back if the clock is moved forward.
-  - Website blocks stay in the hosts file even if the app is force-closed.
-  - Blocks come back as soon as the app starts again.
+  - Website blocks stay in the hosts file even if ProgramPrison is force-closed.
+  - Blocks resume the moment it starts again. On macOS it's also restarted automatically if it's
+    force-quit.
 
-## How it works
+## How it's built
 
-**Websites:** ProgramPrison writes its blocked domains to the system **hosts file**, between
+ProgramPrison is one program that runs in two modes:
+
+- **The background blocker** (`programprison --service`) has no window. It starts at login and
+  enforces blocks.
+  - **Windows:** everything runs on one thread around the Windows message loop. That includes the
+    tray icon, the timer and the covers, which are plain native windows painted with GDI. Windows
+    sends an event when a covered program's window moves, resizes, minimizes, closes or comes to
+    the front, so covers follow instantly and nothing is polled.
+  - **macOS and Linux:** a loop that sleeps between checks.
+- **The settings window** (`programprison`, built with [egui](https://github.com/emilk/egui))
+  only runs while it's open. Closing it leaves the blocker running. Every change goes through
+  the blocker, which enforces the lock rules. The window talks to the blocker over a local
+  connection that only this user's programs can authenticate to.
+
+**Websites:** ProgramPrison writes the blocked domains to the system **hosts file**, between
 marker comments, pointing them at `0.0.0.0`. When nothing is blocked, the section is removed.
 
-The first time a block includes websites, the app asks for an administrator password **once**.
-This lets your user account edit the hosts file, so ProgramPrison never has to run as
-administrator. Each system uses its own tool for this:
+The first time, the app asks for an administrator password **once**. That lets your user account
+edit the hosts file, so ProgramPrison never has to run as administrator. Each system uses its
+own tool for this:
 
 - Windows: `icacls`
 - macOS: `chmod +a`
 - Linux: `setfacl`, from the `acl` package
 
-**Programs:** ProgramPrison checks the process list every 3 seconds, and only while a block that
-includes programs is on. On Windows it reads the list straight from the system rather than
-starting `tasklist` each time. It also watches for any program coming to the front, so a
-blocked program that was just opened is dealt with immediately.
+**Programs:** the process list is read directly from the system, every 3 seconds and only while
+a block that includes programs is on:
 
-**Covers:** on Windows, ProgramPrison asks the system to send an event when a covered program's
-windows move, resize, minimize, close or come to the front. It reacts to those events, so it
-does no work while nothing changes. Covering isn't available on macOS or Linux (on Wayland it
-isn't possible at all), so there "cover" programs are closed instead.
+- Windows: Toolhelp
+- macOS: libproc
+- Linux: `/proc`
+
+On Windows, a program that comes to the front is checked immediately.
 
 ## Limits
 
 This version doesn't defend against:
 
 - someone with administrator rights who edits the hosts file and then kills ProgramPrison
-- someone who uninstalls ProgramPrison
-- someone who deletes its settings file while it isn't running
+- someone who deletes it or its settings file while it isn't running
 
 Other limits:
 
 - A page that's already open can keep working for a minute, because browsers cache addresses
-  and keep connections open. Reloading after that is blocked.
+  and keep connections open.
 - Browsers using **DNS over HTTPS** may skip the hosts file, depending on their settings.
 - Hosts files can't do wildcards: subdomains other than `www.`, `m.` and `mobile.` need adding
   separately.
 - Exclusive-fullscreen games draw over covers, so set them to **Close it**.
-- On Ubuntu 24.04 and newer, the AppImage may not start because of a system restriction on app
-  sandboxes. Start it with `--no-sandbox`, or install it as a `.deb` once that build exists.
+- macOS and Linux have no tray icon yet. Open ProgramPrison from your apps; **Settings → Quit
+  ProgramPrison** stops the blocker.
 
 ## Development
 
 ```bash
-npm install
-npm start          # run the app
-npm test           # unit tests
-npm run test:e2e   # drives the real app (on Linux: xvfb-run -a npm run test:e2e)
-npm run icons      # redraw the icons
-npm run dist       # build installers for this OS
+cargo run                          # the settings window (starts the blocker if needed)
+cargo run -- --service             # just the background blocker
+cargo test                         # everything below
+cargo build --release              # target/release/programprison
 ```
 
-The end-to-end test uses a scratch hosts file and data folder, so it never touches the real
-ones. It works through the app as a user would:
+The tests use a scratch hosts file and data folder, never the real ones.
 
-1. Creates a block and adds websites and a program.
-2. Starts the block and checks that the hosts file is written and the program is closed. On
-   Windows, it checks instead that Notepad is covered and the cover follows Notepad when it
-   moves.
-3. Tries each lock.
-4. Paints the schedule.
-5. Checks that quitting is refused while the block is locked.
-6. Force-kills the app, restarts it, and checks that blocking resumes.
+- **Unit tests** cover the blocking rules: schedules, sessions, locks, domains and the hosts
+  file text.
+- **`tests/service.rs`** starts the real background blocker and works through a full session:
+  1. Blocks a website and a program, and checks that the hosts file is written and the program
+     is closed. On Windows, it checks instead that Notepad is covered and the cover follows
+     Notepad when it moves.
+  2. Undoes a hand edit to the hosts file.
+  3. Tries each lock and the schedule.
+  4. Checks that quitting is refused while the block is locked.
+  5. Force-kills the blocker, restarts it, and checks that blocking resumes.
+- **`tests/gui.rs`** clicks through the real settings window, headless: it creates a block, adds
+  websites and a program, locks it, starts it, and unlocks it by typing the random text. It
+  also checks that pasting the text is refused.
 
 Code layout:
 
 | File | What |
 |---|---|
-| `engine.js` | All blocking rules: schedules, sessions, locks, domains, hosts file text. No OS calls; unit tested. |
-| `enforcer.js` | Hosts file, process list, closing programs, the one-time permission step. |
-| `win32.js` | Windows API calls through [koffi](https://koffi.dev): process list, window positions, window events. |
-| `covers.js` | Cover windows for blocked programs (Windows). |
-| `main.js` | Electron main process: state, timers, tray, start at login, IPC. |
-| `ui/` | The window (plain HTML/CSS/JS) and the cover page. |
+| `src/engine.rs` | All blocking rules. No system calls; unit tested. |
+| `src/service.rs` | The background blocker: state, requests from the window, enforcement. |
+| `src/platform/windows.rs` | Windows: message loop, window-event hooks, covers, tray, process list. |
+| `src/platform/unix.rs` | macOS and Linux loop. |
+| `src/hosts.rs`, `src/procs.rs` | Hosts file; listing and closing processes. |
+| `src/ipc.rs` | Window ↔ blocker protocol. |
+| `src/gui.rs` | The settings window. |
+| `src/autostart.rs` | Start at login (Run key, LaunchAgent, XDG autostart). |
