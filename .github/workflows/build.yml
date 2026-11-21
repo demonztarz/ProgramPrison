@@ -66,6 +66,7 @@ jobs:
           cargo build --release
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item target\release\programprison.exe "out\ProgramPrison-$env:VERSION-windows-x64.exe"
+          Copy-Item assets\README.txt "out\README.txt"
           $json = Join-Path $env:RUNNER_TEMP "selftest.json"
           Start-Process -FilePath target\release\programprison.exe -ArgumentList "--self-test=$json" -Wait
           Get-Content $json
@@ -112,6 +113,7 @@ jobs:
           </dict></plist>
           EOF
           $APP/Contents/MacOS/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
+          cp assets/README.txt out/README.txt
           cd out && ditto -c -k --keepParent ProgramPrison.app "ProgramPrison-$VERSION-macos.zip" && rm -rf ProgramPrison.app
 
       - name: Build (Linux)
@@ -120,7 +122,7 @@ jobs:
           cargo build --release
           ./target/release/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
           mkdir -p out/ProgramPrison
-          cp target/release/programprison README.md assets/icon-256.png out/ProgramPrison/
+          cp target/release/programprison assets/README.txt assets/icon-256.png out/ProgramPrison/
           tar -C out -czf "out/ProgramPrison-$VERSION-linux-x64.tar.gz" ProgramPrison
           rm -rf out/ProgramPrison
 
