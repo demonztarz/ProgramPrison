@@ -43,6 +43,7 @@ pub struct App {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Lock {
     None,
+    /// Type out `length` random words (before version 2 of the state file: characters).
     Random { length: u32 },
     Password { salt: String, hash: String },
     Locked,
@@ -118,9 +119,12 @@ impl Default for Settings {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
+    /// 2: random-text locks count words (1 and files without a version: characters).
+    #[serde(default)]
+    pub version: u32,
     #[serde(default)]
     pub blocks: Vec<Block>,
     #[serde(default)]
@@ -130,10 +134,29 @@ pub struct State {
     pub apps_closed: std::collections::BTreeMap<String, u32>,
 }
 
+pub const STATE_VERSION: u32 = 2;
+pub const WORDS_MIN: u32 = 5;
+pub const WORDS_MAX: u32 = 300;
+
+impl Default for State {
+    fn default() -> Self {
+        State { version: STATE_VERSION, blocks: vec![], settings: Settings::default(), apps_closed: Default::default() }
+    }
+}
+
 impl State {
     /// Reads a state file, repairing anything invalid instead of failing.
     pub fn from_json(text: &str) -> State {
         let mut s: State = serde_json::from_str(text).unwrap_or_default();
+        if s.version < 2 {
+            // Random-text locks used to count characters; a word is about six characters.
+            for b in &mut s.blocks {
+                if let Lock::Random { length } = &mut b.lock {
+                    *length = (*length / 6).max(WORDS_MIN);
+                }
+            }
+        }
+        s.version = STATE_VERSION;
         for b in &mut s.blocks {
             b.repair();
         }
@@ -174,8 +197,8 @@ impl Block {
         self.apps = clean_apps(&self.apps);
         self.schedule.resize(SLOTS, false);
         if let Lock::Random { length } = self.lock
-            && !(20..=2000).contains(&length) {
-                self.lock = Lock::Random { length: length.clamp(20, 2000) };
+            && !(WORDS_MIN..=WORDS_MAX).contains(&length) {
+                self.lock = Lock::Random { length: length.clamp(WORDS_MIN, WORDS_MAX) };
             }
         if let Lock::Password { salt, hash } = &self.lock
             && (salt.is_empty() || hash.is_empty()) {
@@ -617,10 +640,10 @@ pub fn build_lock(old: &Block, req: &LockRequest, locked: bool) -> Result<Lock, 
         "none" => Ok(Lock::None),
         "locked" => Ok(Lock::Locked),
         "random" => {
-            if (20..=2000).contains(&req.length) {
+            if (WORDS_MIN..=WORDS_MAX).contains(&req.length) {
                 Ok(Lock::Random { length: req.length })
             } else {
-                Err("Random text length must be between 20 and 2000 characters.".into())
+                Err(format!("Use between {WORDS_MIN} and {WORDS_MAX} words."))
             }
         }
         "password" => {
@@ -673,21 +696,35 @@ pub fn check_password(lock: &Lock, pw: &str) -> bool {
     want.len() == got.len() && want.iter().zip(got.iter()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
 }
 
-const RANDOM_ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+/// Short, common, easy-to-type English words: the EFF short diceware list (CC BY 3.0 US,
+/// Electronic Frontier Foundation, https://www.eff.org/dice).
+const WORD_LIST: &str = include_str!("../assets/words.txt");
 
-pub fn random_text(n: usize) -> String {
-    let mut out = String::with_capacity(n);
-    let mut buf = [0u8; 64];
-    let limit = 256 - (256 % RANDOM_ALPHABET.len()); // rejection sampling keeps it uniform
+fn words() -> Vec<&'static str> {
+    WORD_LIST.lines().map(str::trim).filter(|w| !w.is_empty()).collect()
+}
+
+/// A chain of `n` random words separated by single spaces, e.g. "acorn pluck tidy gecko".
+pub fn random_words(n: usize) -> String {
+    let list = words();
+    let limit = u16::MAX as usize + 1 - (u16::MAX as usize + 1) % list.len(); // keeps it uniform
+    let mut out: Vec<&str> = Vec::with_capacity(n);
+    let mut buf = [0u8; 2];
     while out.len() < n {
         let _ = getrandom::fill(&mut buf);
-        for &b in &buf {
-            if (b as usize) < limit && out.len() < n {
-                out.push(RANDOM_ALPHABET[b as usize % RANDOM_ALPHABET.len()] as char);
-            }
+        let v = u16::from_le_bytes(buf) as usize;
+        if v < limit {
+            out.push(list[v % list.len()]);
         }
     }
-    out
+    out.join(" ")
+}
+
+/// Whether what was typed matches the word chain. Extra spaces, line breaks and capital
+/// letters don't matter; every word must be there, spelled right, in order.
+pub fn words_match(typed: &str, want: &str) -> bool {
+    let norm = |s: &str| s.split_whitespace().map(|w| w.to_lowercase()).collect::<Vec<_>>();
+    !want.trim().is_empty() && norm(typed) == norm(want)
 }
 
 // ---------- what the window sees ----------
@@ -923,8 +960,9 @@ mod tests {
     fn locks() {
         let mut b = block();
         let req = |kind: &str, length: u32, password: &str| LockRequest { kind: kind.into(), length, password: password.into() };
-        assert_eq!(build_lock(&b, &req("random", 300, ""), false), Ok(Lock::Random { length: 300 }));
-        assert!(build_lock(&b, &req("random", 5, ""), false).is_err());
+        assert_eq!(build_lock(&b, &req("random", 30, ""), false), Ok(Lock::Random { length: 30 }));
+        assert!(build_lock(&b, &req("random", 4, ""), false).is_err());
+        assert!(build_lock(&b, &req("random", 301, ""), false).is_err());
         assert!(build_lock(&b, &req("password", 0, ""), false).is_err());
         let pw = build_lock(&b, &req("password", 0, "hunter22"), false).unwrap();
         assert!(check_password(&pw, "hunter22"));
@@ -936,9 +974,9 @@ mod tests {
         assert!(build_lock(&b, &req("none", 0, ""), true).is_err());
         assert!(build_lock(&b, &req("password", 0, "new1"), true).is_err());
         assert_eq!(build_lock(&b, &req("locked", 0, ""), true), Ok(Lock::Locked));
-        b.lock = Lock::Random { length: 200 };
-        assert!(build_lock(&b, &req("random", 50, ""), true).is_err());
-        assert!(build_lock(&b, &req("random", 400, ""), true).is_ok());
+        b.lock = Lock::Random { length: 30 };
+        assert!(build_lock(&b, &req("random", 20, ""), true).is_err(), "fewer words is weaker");
+        assert!(build_lock(&b, &req("random", 40, ""), true).is_ok());
     }
 
     #[test]
@@ -985,11 +1023,31 @@ mod tests {
     }
 
     #[test]
-    fn random_text_alphabet() {
-        let t = random_text(500);
-        assert_eq!(t.len(), 500);
-        assert!(t.bytes().all(|c| RANDOM_ALPHABET.contains(&c)));
-        assert!(!t.contains(['0', 'O', '1', 'l', 'I']));
+    fn random_words_chain() {
+        let list = words();
+        assert!(list.len() > 1200);
+        assert!(list.iter().all(|w| w.chars().all(|c| c.is_ascii_lowercase())), "only plain lowercase words");
+        let t = random_words(40);
+        let w: Vec<&str> = t.split(' ').collect();
+        assert_eq!(w.len(), 40);
+        assert!(w.iter().all(|x| list.contains(x)));
+        assert_ne!(random_words(40), t, "different every time");
+        assert!(words_match("  Acorn\n pluck   TIDY ", "acorn pluck tidy"));
+        assert!(!words_match("acorn tidy pluck", "acorn pluck tidy"), "order matters");
+        assert!(!words_match("acorn pluck", "acorn pluck tidy"), "every word");
+        assert!(!words_match("acornplucktidy", "acorn pluck tidy"), "words must be separate");
+        assert!(!words_match("", ""));
+    }
+
+    #[test]
+    fn old_character_counts_become_words() {
+        let old = r#"{"blocks":[{"id":"a","name":"x","lock":{"type":"random","length":150}}]}"#;
+        let s = State::from_json(old);
+        assert_eq!(s.blocks[0].lock, Lock::Random { length: 25 });
+        assert_eq!(s.version, STATE_VERSION);
+        // saved again and reloaded: unchanged
+        let again = State::from_json(&serde_json::to_string(&s).unwrap());
+        assert_eq!(again.blocks[0].lock, Lock::Random { length: 25 });
     }
 
     #[test]

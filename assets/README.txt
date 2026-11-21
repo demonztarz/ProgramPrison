@@ -60,8 +60,8 @@ MAKE IT HARD TO BACK OUT
 On the Lock tab choose what it takes to stop early, then click "Save lock":
 
   No lock      - just click Stop
-  Random text  - type out a long string of random characters by hand
-                 (pasting doesn't work)
+  Random words - type out a chain of random words by hand, e.g.
+                 "acorn pluck tidy gecko" (pasting doesn't work)
   Password     - enter a password (have a friend type it so you don't know it)
   Locked       - no way to stop it; you wait until it ends
 

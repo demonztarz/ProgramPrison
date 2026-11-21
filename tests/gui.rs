@@ -1,6 +1,6 @@
 //! Clicks through the real settings window (headless, via egui's test harness) against a real
 //! background blocker: create a block, add sites and a program, start it, lock it, unlock it by
-//! typing the random text, and check that pasting the text is refused.
+//! typing the random words, and check that pasting them is refused.
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -99,10 +99,10 @@ fn run(hosts: &std::path::Path) {
     assert_eq!(h.state().block().unwrap().apps.len(), 1);
     assert!(h.state().toast.as_ref().is_some_and(|t| t.1 && t.0.contains("can't be blocked")));
 
-    eprintln!("• lock tab: random text (200 characters)");
+    eprintln!("• lock tab: random words (30 words)");
     h.get_by_label_contains("Lock").click();
     h.run_steps(3);
-    h.get_by_label("Random text").click();
+    h.get_by_label("Random words").click();
     h.run_steps(2);
     h.get_by_label("Save lock").click();
     h.run_steps(3);
@@ -148,35 +148,39 @@ fn run(hosts: &std::path::Path) {
     eprintln!("• the stop dialog: pasting is refused, a wrong text is refused, the right text stops it");
     h.get_by_label("Stop").click();
     h.run_steps(3);
-    assert!(h.query_by_label_contains("type these 200 characters").is_some());
+    assert!(h.query_by_label_contains("type these 30 words").is_some());
     // Paste goes nowhere.
     h.get_by_label("Unlock text").focus();
     h.run_steps(1);
-    h.event(egui::Event::Paste("abcdefghijklmnopqrst".into()));
+    h.event(egui::Event::Paste("acorn pluck tidy".into()));
     h.run_steps(2);
     assert_eq!(h.get_by_label("Unlock text").value().unwrap_or_default(), "", "paste ignored");
     h.get_by_label("Unlock text").type_text("wrongwrongwrongwrong");
     h.run_steps(1);
     h.get_by_label("Stop block").click();
     h.run_steps(3);
-    assert!(h.query_by_label_contains("doesn't match").is_some(), "mismatch error shown");
+    assert!(h.query_by_label_contains("don't match").is_some(), "mismatch error shown");
     assert!(h.state().block().unwrap().status.active, "still on");
-    // The new challenge text is the monospace label; spaces between groups are ignored.
-    // The text to type is the label made only of letters and digits in groups of ten.
+    // The new word chain is the label made of 30 lowercase words.
     let challenge: String = h
         .get_all_by_role(egui::accesskit::Role::Label)
         .filter_map(|n| n.accesskit_node().value())
-        .map(|v| v.chars().filter(|c| !c.is_whitespace()).collect::<String>())
-        .find(|t| t.len() == 200 && t.chars().all(|c| c.is_ascii_alphanumeric()))
-        .expect("challenge text on screen");
-    assert_eq!(challenge.len(), 200);
+        .map(|v| v.to_string())
+        .find(|t| t.split(' ').count() == 30 && t.chars().all(|c| c.is_ascii_lowercase() || c == ' '))
+        .expect("word chain on screen");
+    // Typed in capitals with extra spaces: still accepted.
+    let challenge = challenge.to_uppercase().replace(' ', "   ");
     h.get_by_label("Unlock text").focus();
     h.run_steps(1);
     h.get_by_label("Unlock text").type_text(&challenge);
-    h.run_steps(1);
+    h.run_steps(4); // the box grows and moves the button down: let the layout settle first
+    let typed = h.get_by_label("Unlock text").value().unwrap_or_default();
     h.get_by_label("Stop block").click();
     h.run_steps(3);
-    assert!(!h.state().block().unwrap().status.active, "stopped");
+    if h.state().block().unwrap().status.active {
+        let labels: Vec<String> = h.get_all_by_role(egui::accesskit::Role::Label).filter_map(|n| n.accesskit_node().value().map(|v| v.to_string())).collect();
+        panic!("not stopped; typed {typed:?}; labels {labels:#?}");
+    }
 
     eprintln!("• schedule tab renders and the preset adds hours");
     h.get_by_label_contains("Schedule").click();

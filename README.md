@@ -38,8 +38,8 @@ right-click the app and choose **Open** the first time.
   paint the hours of the week it should switch on by itself.
 - **Locks**: what it takes to stop a block early.
   - *No lock*: stop any time.
-  - *Random text*: type N random characters by hand. Pasting is blocked, and a new text appears
-    after every wrong try.
+  - *Random words*: type out a chain of N random words by hand (for example "acorn pluck tidy
+    gecko…"). Pasting is blocked, and a new chain appears after every wrong try.
   - *Password*: have someone else set it. Stored as a salted scrypt hash.
   - *Locked*: no way out until time runs out.
   While a block is locked you can **add** sites, programs and hours, but you can't remove them,
@@ -67,7 +67,7 @@ right-click the app and choose **Open** the first time.
 5. **Turn it on**:
    - **Start** → pick a length, or **Until** a time → **Start block**.
    - Or paint hours on the **Schedule** tab to make it switch on by itself every week.
-6. **Lock it** (optional): on the **Lock** tab choose Random text, Password or Locked, then
+6. **Lock it** (optional): on the **Lock** tab choose Random words, Password or Locked, then
    **Save lock**.
 
 Closing the window keeps blocking. Left-click the tray icon (or run the program again) to
@@ -160,7 +160,7 @@ The tests use a scratch hosts file and data folder, never the real ones.
   4. Checks that quitting is refused while the block is locked.
   5. Force-kills the blocker, restarts it, and checks that blocking resumes.
 - **`tests/gui.rs`** clicks through the real settings window, headless: it creates a block, adds
-  websites and a program, locks it, starts it, and unlocks it by typing the random text. It
+  websites and a program, locks it, starts it, and unlocks it by typing the random words. It
   also checks that pasting the text is refused.
 
 Code layout:
@@ -175,3 +175,8 @@ Code layout:
 | `src/ipc.rs` | Window ↔ blocker protocol. |
 | `src/gui.rs` | The settings window. |
 | `src/autostart.rs` | Start at login (Run key, LaunchAgent, XDG autostart). |
+
+## Credits
+
+The word list for the random-words lock is the [EFF short diceware list](https://www.eff.org/dice)
+by the Electronic Frontier Foundation, used under [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/).

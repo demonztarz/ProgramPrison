@@ -251,7 +251,7 @@ impl Service {
                         engine::Lock::Locked => Challenge::Locked { until: b.active_until(now).filter(|&t| t != i64::MAX) },
                         engine::Lock::Password { .. } => Challenge::Password,
                         engine::Lock::Random { length } => {
-                            let text = engine::random_text(*length as usize);
+                            let text = engine::random_words(*length as usize);
                             self.challenges.insert(id.clone(), text.clone());
                             Challenge::Random { text }
                         }
@@ -269,11 +269,8 @@ impl Service {
                                 engine::Lock::None => None,
                                 engine::Lock::Locked => Some(format!("“{}” is locked until it ends.", b.name)),
                                 l @ engine::Lock::Password { .. } => (!engine::check_password(l, &answer)).then(|| "Wrong password.".to_string()),
-                                engine::Lock::Random { .. } => {
-                                    let typed: String = answer.chars().filter(|c| !c.is_whitespace()).collect();
-                                    (want.as_deref() != Some(typed.as_str()))
-                                        .then(|| "The text doesn't match. Check every character; upper and lower case count.".to_string())
-                                }
+                                engine::Lock::Random { .. } => (!want.as_deref().is_some_and(|w| engine::words_match(&answer, w)))
+                                    .then(|| "The words don't match. Check that every word is there, spelled right, in order.".to_string()),
                             }
                         } else {
                             None

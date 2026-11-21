@@ -145,7 +145,7 @@ impl PrisonApp {
             settings_open: false,
             confirm_delete: false,
             confirm_locked: false,
-            lock_form: LockForm { for_key: String::new(), kind: "none".into(), length: 200, password: String::new() },
+            lock_form: LockForm { for_key: String::new(), kind: "none".into(), length: 30, password: String::new() },
             toast: None,
             paint: None,
             setup: None,
@@ -584,7 +584,7 @@ impl PrisonApp {
             let how = match b.lock.as_str() {
                 "locked" => "Nothing can be removed or stopped until it ends.",
                 "password" => "Removing anything or stopping needs the password.",
-                _ => "Removing anything or stopping needs the unlock text.",
+                _ => "Removing anything or stopping needs typing the unlock words.",
             };
             banner(ui, ACCENT, &format!("Locked. You can add websites, programs and hours. {how}"));
         }
@@ -597,7 +597,7 @@ impl PrisonApp {
                 (Tab::Sites, format!("Websites {}", count(b.sites.len()))),
                 (Tab::Apps, format!("Programs {}", count(b.apps.len()))),
                 (Tab::Schedule, format!("Schedule {}", if hours > 0 { format!("{hours} h") } else { String::new() })),
-                (Tab::Lock, format!("Lock {}", if b.lock == "none" { "" } else { &b.lock })),
+                (Tab::Lock, format!("Lock {}", match b.lock.as_str() { "none" => "", "random" => "words", other => other })),
             ] {
                 let sel = self.tab == tab;
                 let color = if sel { ui.visuals().strong_text_color() } else { muted(ui) };
@@ -833,14 +833,14 @@ impl PrisonApp {
     fn lock_tab(&mut self, ui: &mut egui::Ui, b: &PublicBlock) {
         let key = format!("{}|{}|{}|{}", b.id, b.lock, b.random_length, b.status.locked);
         if self.lock_form.for_key != key {
-            self.lock_form = LockForm { for_key: key, kind: b.lock.clone(), length: if b.random_length > 0 { b.random_length } else { 200 }, password: String::new() };
+            self.lock_form = LockForm { for_key: key, kind: b.lock.clone(), length: if b.random_length > 0 { b.random_length } else { 30 }, password: String::new() };
         }
         let locked = b.status.locked;
         hint(ui, "What it takes to stop this block early. It applies to timed blocks and scheduled hours alike.");
         ui.add_space(8.0);
         let options: [(&str, &str, &str); 4] = [
             ("none", "No lock", "Stop whenever you like."),
-            ("random", "Random text", "To stop early, type out random characters by hand. Copy and paste are switched off."),
+            ("random", "Random words", "To stop early, type out a chain of random words by hand. Copy and paste are switched off."),
             ("password", "Password", "Ask someone you trust to type a password you don't know."),
             ("locked", "Locked", "No way out until time runs out. You can't stop it, quit ProgramPrison, delete the block or remove anything from it."),
         ];
@@ -858,8 +858,8 @@ impl PrisonApp {
                             ui.label(RichText::new(desc).color(muted(ui)));
                             if kind == "random" && sel {
                                 ui.horizontal(|ui| {
-                                    ui.label("Characters:");
-                                    ui.add(egui::DragValue::new(&mut self.lock_form.length).range(20..=2000).speed(10));
+                                    ui.label("Words:");
+                                    ui.add(egui::DragValue::new(&mut self.lock_form.length).range(engine::WORDS_MIN..=engine::WORDS_MAX).speed(1));
                                 });
                             }
                             if kind == "password" && sel && !locked {
@@ -941,7 +941,7 @@ impl PrisonApp {
                     };
                     let lock = match b.lock.as_str() {
                         "none" => "No lock: you can stop it any time.".to_string(),
-                        "random" => format!("Stopping early means typing {} random characters.", b.random_length),
+                        "random" => format!("Stopping early means typing {} random words.", b.random_length),
                         "password" => "Stopping early needs the password.".to_string(),
                         _ => "Locked: it can't be stopped early at all.".to_string(),
                     };
@@ -1001,18 +1001,19 @@ impl PrisonApp {
                         submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     }
                     Challenge::Random { text } => {
-                        ui.label(format!("To stop early, type these {} characters exactly. Upper and lower case count.", text.len()));
-                        let spaced: String = text.chars().collect::<Vec<_>>().chunks(10).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join(" ");
+                        let total = text.split_whitespace().count();
+                        ui.label(format!("To stop early, type these {total} words in order. Capital letters and extra spaces don't matter."));
+                        let spaced = text.clone();
                         egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(CornerRadius::same(8)).inner_margin(10).show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-                                ui.add(egui::Label::new(RichText::new(spaced).monospace().size(14.0)).selectable(false).wrap());
+                                ui.add(egui::Label::new(RichText::new(spaced).size(16.0)).selectable(false).wrap());
                             });
                         });
-                        let r = ui.add(egui::TextEdit::multiline(&mut d.answer).font(egui::TextStyle::Monospace).desired_rows(4).desired_width(f32::INFINITY).hint_text("Type the text above exactly").id_salt("answer"));
+                        let r = ui.add(egui::TextEdit::multiline(&mut d.answer).font(egui::FontId::proportional(16.0)).desired_rows(4).desired_width(f32::INFINITY).hint_text("Type the words above").id_salt("answer"));
                         named(&r, "Unlock text");
-                        let typed = d.answer.chars().filter(|c| !c.is_whitespace()).count();
-                        ui.label(RichText::new(format!("{typed} / {}", text.len())).small().color(muted(ui)));
+                        let typed = d.answer.split_whitespace().count();
+                        ui.label(RichText::new(format!("{typed} / {total} words")).small().color(muted(ui)));
                     }
                 }
                 if !d.error.is_empty() {

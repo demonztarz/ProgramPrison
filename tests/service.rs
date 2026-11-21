@@ -182,12 +182,15 @@ fn run(env: &Env, svc: &mut Child) {
     assert!(!call(Request::SetLock { id: id.clone(), lock: LockRequest { kind: "none".into(), length: 0, password: String::new() } }).ok);
     assert!(!call(Request::Quit).ok, "quitting refused while locked");
     let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!("expected a random-text challenge") };
-    assert_eq!(text.len(), 20);
+    assert_eq!(text.split(' ').count(), 20, "20 words");
     let r = call(Request::StopBlock { id: id.clone(), answer: "wrong".into() });
-    assert!(!r.ok && r.error.unwrap().contains("doesn't match"));
+    assert!(!r.ok && r.error.unwrap().contains("don't match"));
     let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
-    let spaced: String = text.chars().collect::<Vec<_>>().chunks(5).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join(" ");
-    ok(Request::StopBlock { id: id.clone(), answer: spaced });
+    // Missing a word is refused; capitals and extra spaces are fine.
+    let short: Vec<&str> = text.split(' ').skip(1).collect();
+    assert!(!call(Request::StopBlock { id: id.clone(), answer: short.join(" ") }).ok);
+    let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
+    ok(Request::StopBlock { id: id.clone(), answer: text.to_uppercase().replace(' ', "  \n ") });
     assert!(!state().blocks[0].status.active);
     wait_for("hosts section removed", 5, || !env.hosts().contains("reddit"));
     #[cfg(windows)]
