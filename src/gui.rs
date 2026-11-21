@@ -60,6 +60,7 @@ pub struct PrisonApp {
     paint: Option<(bool, Vec<bool>)>,
     setup: Option<mpsc::Receiver<Response>>,
     pub offline: Option<String>,
+    shown_requests: Option<u32>,
 }
 
 // ---------- colors ----------
@@ -138,6 +139,7 @@ impl PrisonApp {
             paint: None,
             setup: None,
             offline: None,
+            shown_requests: None,
         };
         app.poll();
         app
@@ -364,6 +366,14 @@ impl PrisonApp {
                     self.toast(r.error.unwrap_or_default(), true)
                 }
             }
+        // Someone opened ProgramPrison again (or clicked the tray icon): come to the front.
+        if let Some(n) = self.state.as_ref().map(|s| s.show_requests) {
+            if self.shown_requests.is_some_and(|seen| n > seen) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            self.shown_requests = Some(n);
+        }
         // Counting down needs a redraw once a second; nothing more while idle.
         ctx.request_repaint_after(Duration::from_secs(1));
 
@@ -1222,6 +1232,15 @@ pub fn setup_style(ctx: &egui::Context) {
     }
 }
 
+/// Held while a settings window is open. The system releases it if the window crashes.
+fn window_lock() -> Option<std::fs::File> {
+    let dir = crate::util::data_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("window.lock")).ok()?;
+    f.try_lock().ok()?;
+    Some(f)
+}
+
 /// Connects to the background blocker, starting it if it isn't running.
 pub fn connect_or_start() -> Option<Client> {
     if let Some(c) = Client::connect() {
@@ -1243,6 +1262,14 @@ pub fn run() {
     let Some(client) = connect_or_start() else {
         crate::util::debug("window: could not reach or start the blocker");
         return;
+    };
+    // Only one settings window: if one is open already, bring it forward and stop here.
+    let _window_lock = match window_lock() {
+        Some(lock) => lock,
+        None => {
+            let _ = client.send(&Request::ShowWindow);
+            return;
+        }
     };
     let client = Arc::new(client);
     let conn: Conn = Arc::new(move |r: &Request| client.send(r));

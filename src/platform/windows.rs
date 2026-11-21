@@ -344,11 +344,11 @@ impl Covers {
             self.remove_cover(k);
         }
         for h in wins {
-            if !self.covers.contains_key(&key(h)) {
-                if let Some(c) = create_cover(pid, &label) {
-                    util::debug(format!("cover created for window {} of {pid}", key(h)));
-                    self.covers.insert(key(h), c);
-                }
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.covers.entry(key(h))
+                && let Some(c) = create_cover(pid, &label)
+            {
+                util::debug(format!("cover created for window {} of {pid}", key(h)));
+                slot.insert(c);
             }
             self.position(h);
         }

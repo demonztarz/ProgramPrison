@@ -24,6 +24,8 @@ pub enum Request {
     SetupHosts,
     RunningApps,
     Quit,
+    /// A second settings window was opened: bring the existing one to the front instead.
+    ShowWindow,
     /// Tests only: positions of cover windows.
     Covers,
 }
@@ -55,6 +57,8 @@ pub struct PublicState {
     pub platform: String,
     pub cover_supported: bool,
     pub version: String,
+    /// Goes up each time the settings window should come to the front.
+    pub show_requests: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

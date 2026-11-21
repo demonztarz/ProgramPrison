@@ -130,6 +130,11 @@ fn run(env: &Env, svc: &mut Child) {
     assert!(second.success());
     assert!(Client::connect().is_some(), "the first copy still answers");
 
+    step("opening the window again asks the open one to come to the front");
+    let before = state().show_requests;
+    ok(Request::ShowWindow);
+    assert_eq!(state().show_requests, before + 1);
+
     step("create a block and add websites (links are cleaned, junk dropped)");
     let id = ok(Request::CreateBlock { name: "Deep work".into() }).id.unwrap();
     let r = ok(Request::UpdateBlock { id: id.clone(), edit: Edit { sites: Some(vec!["https://www.reddit.com/r/all".into(), "not a site".into(), "youtube.com".into()]), ..Default::default() } });

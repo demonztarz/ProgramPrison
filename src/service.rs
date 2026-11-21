@@ -21,6 +21,7 @@ pub struct Service {
     last_mono: i64,
     pub asleep: bool,
     pub quit_requested: bool,
+    show_requests: u32,
 }
 
 /// What the platform loop should do with programs after an enforcement pass.
@@ -49,6 +50,7 @@ impl Service {
             last_mono: mono_ms(),
             asleep: false,
             quit_requested: false,
+            show_requests: 0,
         }
     }
 
@@ -157,6 +159,7 @@ impl Service {
             platform: std::env::consts::OS.into(),
             cover_supported: self.cover_supported,
             version: env!("CARGO_PKG_VERSION").into(),
+            show_requests: self.show_requests,
         }
     }
 
@@ -183,6 +186,10 @@ impl Service {
             Request::GetState => return (Response { ok: true, state: Some(self.public_state()), ..Default::default() }, false),
             Request::RunningApps => return (Response { ok: true, apps: Some(procs::running_names()), ..Default::default() }, false),
             Request::Covers => return (Response::ok(), false), // answered by the platform loop
+            Request::ShowWindow => {
+                self.show_requests += 1;
+                return (Response::ok(), false);
+            }
             Request::CreateBlock { name } => {
                 let name = if name.trim().is_empty() { format!("Block {}", self.state.blocks.len() + 1) } else { name };
                 let b = Block::new(&name);
