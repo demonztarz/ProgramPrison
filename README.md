@@ -86,6 +86,8 @@ Other limits:
 - Hosts files can't do wildcards: subdomains other than `www.`, `m.` and `mobile.` need adding
   separately.
 - Exclusive-fullscreen games draw over covers, so set them to **Close it**.
+- On Ubuntu 24.04 and newer, the AppImage may not start because of a system restriction on app
+  sandboxes. Start it with `--no-sandbox`, or install it as a `.deb` once that build exists.
 
 ## Development
 

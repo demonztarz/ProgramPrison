@@ -32,6 +32,15 @@ watchdog.unref();
 fs.writeFileSync(hostsFile, '127.0.0.1 localhost\n');
 fs.mkdirSync(SHOTS, { recursive: true });
 
+// Kills the app and its helper processes (on Windows, killing the main process alone leaves
+// its children running).
+function killTree(app) {
+  try {
+    const pid = app.process().pid;
+    if (isWin) execFileSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' });
+    else app.process().kill('SIGKILL');
+  } catch {}
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function waitFor(fn, what, timeout = 10000) {
   const end = Date.now() + timeout;
@@ -276,10 +285,13 @@ async function step(name, fn) {
     });
 
     await step('state survives a restart (even a forced one) and blocking resumes', async () => {
-      app.process().kill('SIGKILL');
-      await sleep(500);
+      killTree(app);
+      await sleep(1500);
       fs.writeFileSync(hostsFile, '127.0.0.1 localhost\n');
-      ({ app, page } = await launch());
+      // A force-killed app can hold its single-instance lock for a moment; try a few times.
+      for (let i = 0; ; i++) {
+        try { ({ app, page } = await launch()); break; } catch (e) { if (i >= 4) throw e; await sleep(2000); }
+      }
       await page.locator('.block-item').first().waitFor();
       assert.match(await page.textContent('#statusPill'), /^Locked/);
       await waitFor(() => /0\.0\.0\.0 reddit\.com/.test(hosts()), 'hosts restored after restart');
@@ -295,7 +307,7 @@ async function step(name, fn) {
     try { await withTimeout(page.screenshot({ path: path.join(SHOTS, 'failure.png') }), 5000, 'screenshot'); } catch {}
     process.exitCode = 1;
   } finally {
-    try { app.process().kill('SIGKILL'); } catch {}
+    killTree(app);
     if (isWin) { try { execFileSync('taskkill', ['/F', '/IM', 'notepad.exe']); } catch {} }
     clearTimeout(watchdog);
     setTimeout(() => process.exit(), 500);

@@ -34,7 +34,10 @@ jobs:
       - name: End-to-end test (real app, Linux)
         if: runner.os == 'Linux'
         timeout-minutes: 8
-        run: xvfb-run -a -s "-screen 0 1400x900x24" npm run test:e2e
+        # Ubuntu 24.04+ restricts the user namespaces Chromium's sandbox needs.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a -s "-screen 0 1400x900x24" npm run test:e2e
       - name: End-to-end test (real app, includes window covering on Windows)
         if: runner.os != 'Linux'
         timeout-minutes: 8
