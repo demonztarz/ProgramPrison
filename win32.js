@@ -40,7 +40,7 @@ const GetForegroundWindow = user32.func('intptr_t __stdcall GetForegroundWindow(
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hwnd)');
 const BringWindowToTop = user32.func('bool __stdcall BringWindowToTop(intptr_t hwnd)');
 const SetWindowPos = user32.func('bool __stdcall SetWindowPos(intptr_t hwnd, intptr_t after, int x, int y, int cx, int cy, uint32_t flags)');
-const AttachThreadInput = user32.func('bool __stdcall AttachThreadInput(uint32_t idAttach, uint32_t idAttachTo, bool attach)');
+const ShowWindowAsync = user32.func('bool __stdcall ShowWindowAsync(intptr_t hwnd, int cmd)');
 const SetWinEventHook = user32.func('intptr_t __stdcall SetWinEventHook(uint32_t eventMin, uint32_t eventMax, intptr_t hmod, WinEventProc *cb, uint32_t idProcess, uint32_t idThread, uint32_t flags)');
 const UnhookWinEvent = user32.func('bool __stdcall UnhookWinEvent(intptr_t hook)');
 const DwmGetWindowAttribute = dwmapi.func('int32_t __stdcall DwmGetWindowAttribute(intptr_t hwnd, uint32_t attr, void *value, uint32_t size)');
@@ -51,7 +51,6 @@ const Process32NextW = kernel32.func('bool __stdcall Process32NextW(intptr_t sna
 const CloseHandle = kernel32.func('bool __stdcall CloseHandle(intptr_t h)');
 const OpenProcess = kernel32.func('intptr_t __stdcall OpenProcess(uint32_t access, bool inherit, uint32_t pid)');
 const QueryFullProcessImageNameW = kernel32.func('bool __stdcall QueryFullProcessImageNameW(intptr_t proc, uint32_t flags, void *name, _Inout_ uint32_t *size)');
-const GetCurrentThreadId = kernel32.func('uint32_t __stdcall GetCurrentThreadId()');
 
 const TH32CS_SNAPPROCESS = 0x2;
 const INVALID_HANDLE = -1;
@@ -67,6 +66,7 @@ const HWND_TOP = 0;
 const SWP_NOSIZE = 0x1;
 const SWP_NOMOVE = 0x2;
 const SWP_NOACTIVATE = 0x10;
+const SW_MINIMIZE = 6;
 const WINEVENT_OUTOFCONTEXT = 0x0;
 const WINEVENT_SKIPOWNPROCESS = 0x2;
 
@@ -175,19 +175,15 @@ function placeAbove(cover, target) {
   SetWindowPos(cover, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
-// Windows only lets the program that has the keyboard take the foreground; joining its input
-// queue for a moment is the usual way round that.
-function forceForeground(hwnd) {
-  const fg = Number(GetForegroundWindow());
-  if (fg === hwnd) return true;
-  const fgThread = fg ? GetWindowThreadProcessId(fg, [0]) : 0;
-  const me = GetCurrentThreadId();
-  const attach = fgThread && fgThread !== me;
-  if (attach) AttachThreadInput(me, fgThread, true);
-  BringWindowToTop(hwnd);
-  const ok = SetForegroundWindow(hwnd);
-  if (attach) AttachThreadInput(me, fgThread, false);
-  return ok;
+// Tries to give `cover` the keyboard. Windows refuses this to background programs, and the
+// usual workaround (joining the other program's input queue) can deadlock, so when it's refused
+// the blocked window is minimized instead: either way it can't be used. Async calls only, so a
+// frozen blocked program can never freeze ProgramPrison.
+function takeFocus(cover, target) {
+  BringWindowToTop(cover);
+  if (SetForegroundWindow(cover) && Number(GetForegroundWindow()) === cover) return 'focused';
+  ShowWindowAsync(target, SW_MINIMIZE);
+  return 'minimized';
 }
 
 // Calls onEvent(event, hwnd) for top-level window events. pid 0 = every process.
@@ -212,4 +208,4 @@ function foregroundWindow() {
   return Number(GetForegroundWindow());
 }
 
-module.exports = { EVENT, listProcesses, processImageName, windowPid, windowsOf, windowInfo, placeAbove, forceForeground, hookEvents, foregroundWindow };
+module.exports = { EVENT, listProcesses, processImageName, windowPid, windowsOf, windowInfo, placeAbove, takeFocus, hookEvents, foregroundWindow };

@@ -18,6 +18,17 @@ const isWin = process.platform === 'win32';
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-e2e-'));
 const dataDir = path.join(work, 'data');
 const hostsFile = path.join(work, 'hosts');
+const debugLog = path.join(work, 'debug.log');
+function dumpDebug() {
+  try { console.log('--- app debug log ---\n' + fs.readFileSync(debugLog, 'utf8').split('\n').slice(-80).join('\n')); } catch { console.log('(no debug log)'); }
+}
+// Never hang CI: fail loudly after 5 minutes.
+const watchdog = setTimeout(() => {
+  console.log('\nWATCHDOG: the test hung');
+  dumpDebug();
+  process.exit(1);
+}, 5 * 60000);
+watchdog.unref();
 fs.writeFileSync(hostsFile, '127.0.0.1 localhost\n');
 fs.mkdirSync(SHOTS, { recursive: true });
 
@@ -39,8 +50,10 @@ async function launch() {
   const app = await electron.launch({
     executablePath: require('electron'),
     args,
-    env: { ...process.env, PROGRAMPRISON_TEST: '1', PROGRAMPRISON_DATA: dataDir, PROGRAMPRISON_HOSTS: hostsFile, PROGRAMPRISON_TICK_MS: '500' },
+    env: { ...process.env, PROGRAMPRISON_DEBUG: debugLog, PROGRAMPRISON_TEST: '1', PROGRAMPRISON_DATA: dataDir, PROGRAMPRISON_HOSTS: hostsFile, PROGRAMPRISON_TICK_MS: '500' },
   });
+  app.process().stdout.on('data', (d) => process.stdout.write('[app] ' + d));
+  app.process().stderr.on('data', (d) => { const t = String(d); if (!/dbus|Fontconfig|GPU|gpu_|viz_|libva/.test(t)) process.stdout.write('[app!] ' + t); });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   page.on('pageerror', (e) => { console.error('PAGE ERROR', e); process.exitCode = 1; });
@@ -54,7 +67,8 @@ function startFakeProgram(name) {
     return spawn('notepad.exe', [], { detached: false });
   }
   const exe = path.join(work, name);
-  fs.copyFileSync('/bin/sleep', exe);
+  if (process.platform === 'linux') fs.writeFileSync(exe, '#!/bin/sh\nwhile :; do sleep 1; done\n');
+  else fs.copyFileSync('/bin/sleep', exe);
   fs.chmodSync(exe, 0o755);
   return spawn(exe, ['60']);
 }
@@ -63,6 +77,12 @@ const exited = (child) => new Promise((res) => {
   if (child.exitCode !== null || child.signalCode !== null) res(true);
   else child.on('exit', () => res(true));
 });
+
+// app.evaluate never times out by itself; a frozen main process would hang the test forever.
+const ev = (a, fn, arg) => withTimeout(a.evaluate(fn, arg), 8000, 'main-process call');
+function withTimeout(p, ms, what) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms} ms (main process frozen?)`)), ms))]);
+}
 
 async function step(name, fn) {
   process.stdout.write(`• ${name} … `);
@@ -113,9 +133,9 @@ async function step(name, fn) {
 
     if (isWin) {
       await step('cover is offered on Windows; choose it for Notepad', async () => {
-        assert.equal(await app.evaluate(() => global.__prison.coverSupported()), true, 'covering available');
+        assert.equal(await ev(app, () => global.__prison.coverSupported()), true, 'covering available');
         await page.selectOption('#appList li:has-text("notepad") select', 'cover');
-        await waitFor(async () => (await app.evaluate(() => global.__prison.state().blocks[0].apps[0].mode)) === 'cover', 'mode saved');
+        await waitFor(async () => (await ev(app, () => global.__prison.state().blocks[0].apps[0].mode)) === 'cover', 'mode saved');
       });
     }
 
@@ -135,7 +155,7 @@ async function step(name, fn) {
     if (isWin) {
       await step('Notepad window is covered, and the cover follows it', async () => {
         const snap = await waitFor(async () => {
-          const s = await app.evaluate(() => global.__prison.covers());
+          const s = await ev(app, () => global.__prison.covers());
           return s && s.length && s[0].visible ? s : null;
         }, 'a visible cover', 15000);
         assert.equal(prog.exitCode, null, 'notepad is covered, not closed');
@@ -143,7 +163,7 @@ async function step(name, fn) {
         assertNear(snap[0].bounds, rect, 'cover matches the window');
         moveWindow(snap[0].target, rect.x + 120, rect.y + 80, 700, 500);
         await waitFor(async () => {
-          const s = await app.evaluate(() => global.__prison.covers());
+          const s = await ev(app, () => global.__prison.covers());
           const r = winRect(s[0].target);
           return near(s[0].bounds, r) && r.width > 0;
         }, 'cover to follow the moved window', 5000);
@@ -191,7 +211,7 @@ async function step(name, fn) {
       await page.click('#stopConfirm');
       await waitFor(async () => /^Off/.test(await page.textContent('#statusPill')), 'block stopped');
       await waitFor(() => !/reddit/.test(hosts()), 'hosts section removed');
-      if (isWin) await waitFor(async () => (await app.evaluate(() => global.__prison.covers())).length === 0, 'covers removed');
+      if (isWin) await waitFor(async () => (await ev(app, () => global.__prison.covers())).length === 0, 'covers removed');
     });
 
     await step('schedule grid: drag paints hours', async () => {
@@ -204,12 +224,12 @@ async function step(name, fn) {
       await page.mouse.down();
       await page.mouse.move(bb.x + 5, bb.y + 5, { steps: 8 });
       await page.mouse.up();
-      await waitFor(async () => (await app.evaluate(() => global.__prison.state().blocks[0].schedule.slice(24, 28).every(Boolean))), 'four hours saved');
+      await waitFor(async () => (await ev(app, () => global.__prison.state().blocks[0].schedule.slice(24, 28).every(Boolean))), 'four hours saved');
       await page.click('#schedWork');
-      await waitFor(async () => (await app.evaluate(() => global.__prison.state().blocks[0].schedule.filter(Boolean).length)) >= 40, 'weekday preset');
+      await waitFor(async () => (await ev(app, () => global.__prison.state().blocks[0].schedule.filter(Boolean).length)) >= 40, 'weekday preset');
       await page.screenshot({ path: path.join(SHOTS, '07-schedule.png') });
       await page.click('#schedClear');
-      await waitFor(async () => (await app.evaluate(() => global.__prison.state().blocks[0].schedule.filter(Boolean).length)) === 0, 'cleared');
+      await waitFor(async () => (await ev(app, () => global.__prison.state().blocks[0].schedule.filter(Boolean).length)) === 0, 'cleared');
     });
 
     await step('password lock: wrong password refused, right one stops it', async () => {
@@ -217,7 +237,7 @@ async function step(name, fn) {
       await page.check('input[name=lock][value=password]');
       await page.fill('#passwordInput', 'letmeout');
       await page.click('#saveLock');
-      await waitFor(async () => (await app.evaluate(() => global.__prison.state().blocks[0].lock.type)) === 'password', 'password saved');
+      await waitFor(async () => (await ev(app, () => global.__prison.state().blocks[0].lock.type)) === 'password', 'password saved');
       assert.ok(!fs.readFileSync(path.join(dataDir, 'state.json'), 'utf8').includes('letmeout'), 'password not stored in plain text');
       await page.click('#startBtn');
       await page.click('#durationChips button[data-min="15"]');
@@ -249,9 +269,9 @@ async function step(name, fn) {
       assert.equal(r.ok, false);
       const del = await page.evaluate(async () => window.prison.deleteBlock((await window.prison.getState()).blocks[0].id));
       assert.equal(del.ok, false);
-      await app.evaluate(({ app: a }) => { setTimeout(() => a.quit(), 0); });
+      await ev(app, ({ app: a }) => { setTimeout(() => a.quit(), 0); });
       await sleep(1500);
-      assert.equal(await app.evaluate(() => global.__prison.state().blocks.length), 1, 'still running after quit request');
+      assert.equal(await ev(app, () => global.__prison.state().blocks.length), 1, 'still running after quit request');
       await page.screenshot({ path: path.join(SHOTS, '08-hard-locked.png') });
     });
 
@@ -266,15 +286,19 @@ async function step(name, fn) {
     });
 
     if (prog && prog.exitCode === null) prog.kill();
+    if (isWin) dumpDebug();
     console.log('\nAll end-to-end checks passed. Screenshots in', SHOTS);
   } catch (e) {
     console.log('FAILED');
     console.error(e);
-    try { await page.screenshot({ path: path.join(SHOTS, 'failure.png') }); } catch {}
+    dumpDebug();
+    try { await withTimeout(page.screenshot({ path: path.join(SHOTS, 'failure.png') }), 5000, 'screenshot'); } catch {}
     process.exitCode = 1;
   } finally {
     try { app.process().kill('SIGKILL'); } catch {}
     if (isWin) { try { execFileSync('taskkill', ['/F', '/IM', 'notepad.exe']); } catch {} }
+    clearTimeout(watchdog);
+    setTimeout(() => process.exit(), 500);
   }
 })();
 

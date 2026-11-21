@@ -7,6 +7,17 @@ const path = require('path');
 const { spawn } = require('child_process');
 const enforcer = require('../enforcer');
 
+// A long-running stand-in program with a chosen process name. Copying /bin/sleep doesn't work
+// everywhere (multi-call coreutils refuse to run under another name), so on Linux it's a shell
+// script, whose process takes the script's name.
+function makeFakeProgram(dir, name) {
+  const exe = path.join(dir, name);
+  if (process.platform === 'linux') fs.writeFileSync(exe, '#!/bin/sh\nwhile :; do sleep 1; done\n');
+  else fs.copyFileSync('/bin/sleep', exe);
+  fs.chmodSync(exe, 0o755);
+  return exe;
+}
+
 test('parseTasklist reads tasklist CSV', () => {
   const out = '"System Idle Process","0","Services","0","8 K"\r\n"Steam.exe","4242","Console","1","120,000 K"\r\n';
   assert.deepEqual(enforcer.parseTasklist(out), [{ pid: 0, names: ['System Idle Process'] }, { pid: 4242, names: ['Steam.exe'] }]);
@@ -50,14 +61,8 @@ test('syncHosts reports when it needs permission', { skip: process.getuid && pro
 
 test('closeMatching closes a running program by name and leaves others', { skip: process.platform === 'win32' }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-'));
-  const fake = path.join(dir, 'timewaster');
-  const other = path.join(dir, 'keepalive');
-  fs.copyFileSync('/bin/sleep', fake);
-  fs.copyFileSync('/bin/sleep', other);
-  fs.chmodSync(fake, 0o755);
-  fs.chmodSync(other, 0o755);
-  const a = spawn(fake, ['30']);
-  const b = spawn(other, ['30']);
+  const a = spawn(makeFakeProgram(dir, 'timewaster'), ['30']);
+  const b = spawn(makeFakeProgram(dir, 'keepalive'), ['30']);
   const exited = new Promise((res) => a.on('exit', (code, sig) => res(sig)));
   await new Promise((r) => setTimeout(r, 200));
   const closed = await enforcer.closeMatching(['timewaster']);

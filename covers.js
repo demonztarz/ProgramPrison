@@ -3,7 +3,14 @@
 // Event driven: Windows tells us when a covered program's window moves, resizes, minimizes,
 // closes or comes to the front, so nothing is polled while a cover is up.
 
+const fs = require('fs');
 const path = require('path');
+
+// PROGRAMPRISON_DEBUG=<file>: log every step, written synchronously so it survives a freeze.
+const DEBUG = process.env.PROGRAMPRISON_DEBUG;
+function dbg(...args) {
+  if (DEBUG) fs.appendFileSync(DEBUG, `${new Date().toISOString()} covers ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}\n`);
+}
 const { BrowserWindow, screen } = require('electron');
 
 const SYSTEM_EVENTS = [0x0003, 0x0017]; // foreground .. minimize end
@@ -27,6 +34,7 @@ class CoverManager {
     if (on && !this.globalUnhook) {
       this.globalUnhook = this.w.hookEvents(0, 0x0003, 0x0003, (_ev, hwnd) => {
         const pid = this.w.windowPid(hwnd);
+        dbg('foreground', pid, hwnd);
         if (this.targets.has(pid)) this.raise(hwnd);
         else if (pid) this.onForegroundPid(pid);
       });
@@ -38,6 +46,7 @@ class CoverManager {
 
   // targets: Map pid -> { name, until } for every running process that should be covered.
   setTargets(targets) {
+    if (targets.size || this.targets.size) dbg('setTargets', [...targets.keys()]);
     for (const [pid, t] of this.targets) {
       if (!targets.has(pid)) {
         for (const u of t.unhooks) u();
@@ -58,10 +67,12 @@ class CoverManager {
 
   addTarget(pid, info) {
     if (this.targets.has(pid)) return;
+    dbg('addTarget', pid, info);
     const onEvent = (ev, hwnd) => this.onEvent(pid, ev, hwnd);
     const unhooks = [SYSTEM_EVENTS, OBJECT_EVENTS, CLOAK_EVENTS]
       .map(([a, b]) => this.w.hookEvents(pid, a, b, onEvent))
       .filter(Boolean);
+    dbg('hooks installed', unhooks.length);
     this.targets.set(pid, { info, unhooks });
     this.refresh(pid);
     const fg = this.w.foregroundWindow();
@@ -75,6 +86,7 @@ class CoverManager {
 
   onEvent(pid, ev, hwnd) {
     const E = this.w.EVENT;
+    dbg('event', pid, ev.toString(16), hwnd);
     const c = this.covers.get(hwnd);
     if (ev === E.LOCATIONCHANGE || ev === E.MOVESIZEEND) {
       if (c) this.position(hwnd, c);
@@ -110,12 +122,13 @@ class CoverManager {
       return;
     }
     this.position(hwnd, c);
-    this.w.forceForeground(c.hwnd);
+    dbg('takeFocus', hwnd, this.w.takeFocus(c.hwnd, hwnd));
   }
 
   refresh(pid) {
     if (!this.targets.has(pid)) return;
     const wins = this.w.windowsOf(new Set([pid]));
+    dbg('refresh', pid, wins);
     const seen = new Set(wins.map((x) => x.hwnd));
     for (const [hwnd, c] of this.covers) if (c.pid === pid && !seen.has(hwnd)) this.removeCover(hwnd);
     for (const info of wins) {
@@ -151,6 +164,7 @@ class CoverManager {
     win.webContents.on('will-navigate', (e) => e.preventDefault());
     win.loadFile(path.join(__dirname, 'ui', 'cover.html'));
     this.covers.set(info.hwnd, c);
+    dbg('created cover', info.hwnd, '->', hwnd);
     return c;
   }
 
@@ -168,7 +182,7 @@ class CoverManager {
     const cur = c.win.getBounds();
     if (cur.x !== b.x || cur.y !== b.y || cur.width !== b.width || cur.height !== b.height) c.win.setBounds(b);
     if (c.win.isAlwaysOnTop() !== info.topmost) c.win.setAlwaysOnTop(info.topmost, 'screen-saver');
-    if (!c.shown) { c.win.showInactive(); c.shown = true; }
+    if (!c.shown) { c.win.showInactive(); c.shown = true; dbg('shown', b); }
     this.w.placeAbove(c.hwnd, hwnd);
   }
 
