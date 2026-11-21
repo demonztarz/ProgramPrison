@@ -1,0 +1,76 @@
+{
+  "name": "programprison",
+  "productName": "ProgramPrison",
+  "version": "0.1.0",
+  "description": "Block distracting websites and programs on a timer or a weekly schedule, with locks that are hard to undo.",
+  "main": "main.js",
+  "author": "ProgramPrison",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/e2e/run.js",
+    "icons": "node scripts/make-icons.js",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "koffi": "3.3.8"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.56.1"
+  },
+  "build": {
+    "appId": "app.programprison",
+    "productName": "ProgramPrison",
+    "artifactName": "ProgramPrison-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "main.js",
+      "engine.js",
+      "enforcer.js",
+      "win32.js",
+      "covers.js",
+      "preload.js",
+      "ui/**/*",
+      "assets/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**",
+      "node_modules/@koromix/**"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "ProgramPrison-${version}-setup.exe"
+    },
+    "portable": {
+      "artifactName": "ProgramPrison-${version}-portable.exe"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png"
+    }
+  }
+}

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+<title>ProgramPrison</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="sidebar">
+  <div class="brand"><img src="../assets/icon-64.png" alt=""><span>ProgramPrison</span></div>
+  <div class="side-label">Blocks</div>
+  <ul id="blockList"></ul>
+  <button id="newBlock" class="btn ghost wide">+ New block</button>
+  <div class="sidebar-foot">
+    <div id="statsLine" class="muted small"></div>
+    <button id="openSettings" class="btn ghost small">Settings</button>
+  </div>
+</aside>
+
+<main>
+  <div id="hostsBanner" class="banner" hidden>
+    <span id="hostsBannerText"></span>
+    <button id="hostsSetup" class="btn small primary">Set up website blocking</button>
+  </div>
+
+  <div id="empty" class="empty" hidden>
+    <img src="../assets/icon-256.png" alt="" width="96" height="96">
+    <h2>Lock away distractions</h2>
+    <p>A block is a list of websites and programs to keep out of reach. Run it on a timer or give it a weekly schedule, and lock it so you can't back out.</p>
+    <button id="emptyNew" class="btn primary">Create your first block</button>
+  </div>
+
+  <section id="editor" hidden>
+    <header class="editor-head">
+      <input id="blockName" class="name-input" maxlength="60" aria-label="Block name" spellcheck="false">
+      <span id="statusPill" class="pill"></span>
+      <div class="spacer"></div>
+      <button id="startBtn" class="btn primary">Start</button>
+      <button id="stopBtn" class="btn">Stop</button>
+      <button id="deleteBtn" class="btn ghost danger">Delete</button>
+    </header>
+    <div id="lockNote" class="lock-note" hidden></div>
+
+    <nav class="tabs" role="tablist">
+      <button data-tab="sites" class="tab">Websites <span id="sitesCount" class="count"></span></button>
+      <button data-tab="apps" class="tab">Programs <span id="appsCount" class="count"></span></button>
+      <button data-tab="schedule" class="tab">Schedule <span id="schedCount" class="count"></span></button>
+      <button data-tab="lock" class="tab">Lock <span id="lockCount" class="count"></span></button>
+    </nav>
+
+    <div class="panel" data-panel="sites">
+      <form id="siteForm" class="add-row">
+        <input id="siteInput" placeholder="example.com, or paste a link" spellcheck="false" autocomplete="off">
+        <button class="btn">Add</button>
+      </form>
+      <div class="presets"><span class="muted small">Quick add</span><span id="presetChips"></span></div>
+      <ul id="siteList" class="item-list"></ul>
+      <p class="hint">Blocking example.com also blocks www.example.com, m.example.com and mobile.example.com. Other subdomains need adding separately. Works in every browser.</p>
+    </div>
+
+    <div class="panel" data-panel="apps" hidden>
+      <form id="appForm" class="add-row">
+        <input id="appInput" placeholder="Program name, e.g. steam.exe or Discord" spellcheck="false" autocomplete="off">
+        <button class="btn">Add</button>
+      </form>
+      <div class="add-row">
+        <select id="runningSelect"><option value="">Or pick a program that's running now…</option></select>
+        <button id="refreshRunning" type="button" class="btn ghost">Refresh</button>
+      </div>
+      <ul id="appList" class="item-list"></ul>
+      <p class="hint">While the block is on, these programs are closed as soon as they start.</p>
+    </div>
+
+    <div class="panel" data-panel="schedule" hidden>
+      <p class="hint top">Click or drag across the hours this block should switch on by itself, every week.</p>
+      <div id="grid" class="grid"></div>
+      <div class="grid-actions">
+        <button id="schedWork" type="button" class="btn ghost small">Add weekdays 9–5</button>
+        <button id="schedEvening" type="button" class="btn ghost small">Add evenings 9pm–7am</button>
+        <button id="schedClear" type="button" class="btn ghost small">Clear</button>
+      </div>
+    </div>
+
+    <div class="panel" data-panel="lock" hidden>
+      <p class="hint top">What it takes to stop this block early. It applies to timed blocks and scheduled hours alike.</p>
+      <div class="lock-options">
+        <label class="radio"><input type="radio" name="lock" value="none">
+          <div><b>No lock</b><span>Stop whenever you like.</span></div></label>
+        <label class="radio"><input type="radio" name="lock" value="random">
+          <div><b>Random text</b><span>To stop early, type out
+            <input id="randomLength" type="number" min="20" max="2000" step="10" value="200" aria-label="Number of characters">
+            random characters by hand. Copy and paste are switched off.</span></div></label>
+        <label class="radio"><input type="radio" name="lock" value="password">
+          <div><b>Password</b><span>Ask someone you trust to type a password you don't know.
+            <input id="passwordInput" type="password" placeholder="New password" autocomplete="new-password"></span></div></label>
+        <label class="radio"><input type="radio" name="lock" value="locked">
+          <div><b>Locked</b><span>No way out until time runs out. You can't stop it, quit the app, delete the block or remove anything from it.</span></div></label>
+      </div>
+      <button id="saveLock" class="btn primary">Save lock</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="startDialog">
+  <form id="startForm">
+    <h3>Start <span id="startName"></span></h3>
+    <div class="chips" id="durationChips">
+      <button type="button" data-min="15">15 min</button>
+      <button type="button" data-min="30">30 min</button>
+      <button type="button" data-min="60">1 hour</button>
+      <button type="button" data-min="120">2 hours</button>
+      <button type="button" data-min="240">4 hours</button>
+      <button type="button" data-min="480">8 hours</button>
+      <button type="button" data-min="1440">1 day</button>
+    </div>
+    <div class="row">
+      <label class="inline"><input type="radio" name="startMode" value="for" checked> For</label>
+      <input id="customH" type="number" min="0" max="8784" value="1" aria-label="Hours"> h
+      <input id="customM" type="number" min="0" max="59" value="0" aria-label="Minutes"> min
+    </div>
+    <div class="row">
+      <label class="inline"><input type="radio" name="startMode" value="until"> Until</label>
+      <input id="untilInput" type="datetime-local" aria-label="End time">
+    </div>
+    <p id="startSummary" class="summary"></p>
+    <p id="startError" class="error"></p>
+    <div class="dialog-actions">
+      <button type="button" id="startCancel" class="btn ghost">Cancel</button>
+      <button type="submit" id="startConfirm" class="btn primary">Start block</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="stopDialog">
+  <form id="stopForm">
+    <h3>Stop <span id="stopName"></span>?</h3>
+    <div id="stopBody"></div>
+    <p id="stopError" class="error"></p>
+    <div class="dialog-actions">
+      <button type="button" id="stopCancel" class="btn ghost">Cancel</button>
+      <button type="submit" id="stopConfirm" class="btn danger">Stop block</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDialog">
+  <form id="settingsForm">
+    <h3>Settings</h3>
+    <label class="check"><input type="checkbox" id="startAtLogin"> Start ProgramPrison when I log in</label>
+    <p class="muted small">Keep this on, so blocks still apply after a restart.</p>
+    <h4>Website blocking</h4>
+    <p id="hostsInfo" class="small"></p>
+    <button type="button" id="settingsHostsSetup" class="btn small">Set up website blocking</button>
+    <p id="settingsError" class="error"></p>
+    <p class="muted small" id="versionLine"></p>
+    <div class="dialog-actions">
+      <button type="button" id="settingsClose" class="btn primary">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
