@@ -18,7 +18,7 @@ serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 getrandom = "0.4"
 scrypt = { version = "0.12", default-features = false }
-eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "x11", "wayland", "accesskit"] }
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "glow", "x11", "wayland", "accesskit"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

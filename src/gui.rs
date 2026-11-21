@@ -1346,7 +1346,13 @@ pub fn run(smoke_out: Option<String>) {
     };
     let client = Arc::new(client);
     let conn: Conn = Arc::new(move |r: &Request| client.send(r));
+    // DirectX on Windows, Metal on macOS, Vulkan/OpenGL on Linux, through wgpu. Windows' own
+    // OpenGL depends on the graphics driver and is missing on some machines, so OpenGL is only
+    // the fallback: if wgpu can't start, the window relaunches itself with OpenGL.
+    let use_glow = std::env::var("PROGRAMPRISON_RENDERER").is_ok_and(|v| v == "glow");
+    let renderer = if use_glow { eframe::Renderer::Glow } else { eframe::Renderer::Wgpu };
     let options = eframe::NativeOptions {
+        renderer,
         viewport: egui::ViewportBuilder::default()
             .with_title("ProgramPrison")
             .with_app_id("programprison")
@@ -1366,6 +1372,16 @@ pub fn run(smoke_out: Option<String>) {
         }),
     );
     if let Err(e) = result {
-        crate::util::log(format!("window: could not open: {e}"));
+        crate::util::log(format!("window: could not open with {renderer:?}: {e}"));
+        if !use_glow {
+            drop(_window_lock);
+            if let Ok(exe) = std::env::current_exe() {
+                crate::util::log("window: trying again with OpenGL");
+                let mut c = crate::util::command(&exe.display().to_string());
+                c.env("PROGRAMPRISON_RENDERER", "glow");
+                c.args(std::env::args().skip(1));
+                let _ = c.status();
+            }
+        }
     }
 }
