@@ -126,7 +126,7 @@ impl Service {
                 active.iter().map(|b| (b.name.clone(), b.is_locked(now), b.active_until(now).filter(|&t| t != i64::MAX))).collect();
             let sites = active.iter().map(|b| b.sites.len()).sum();
             let progs = active.iter().map(|b| b.apps.len()).sum();
-            crate::discord::activity(&blocks, sites, progs)
+            crate::discord::activity(&blocks, sites, progs, now)
         } else {
             None
         };

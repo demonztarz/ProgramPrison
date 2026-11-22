@@ -118,7 +118,7 @@ fn shows_running_blocks_on_discord() {
         call(Request::StartBlock { id: id.clone(), ends_at: ends, minutes: None });
         let a = next(&rx, "activity", |v| v.get("activity").is_some_and(|a| !a.is_null()))["activity"].clone();
         assert_eq!(a["details"], "Locked in: Deep work");
-        assert_eq!(a["state"], "Blocking 2 websites");
+        assert_eq!(a["state"], "Blocking 2 websites · 45 min left");
         assert_eq!(a["timestamps"]["end"], ends);
         assert_eq!(a["type"], 5);
         assert_eq!(a["assets"]["large_text"], "Program Prison");

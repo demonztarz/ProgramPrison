@@ -303,7 +303,7 @@ fn run(id: String, rx: Receiver<Msg>, status: Arc<Mutex<String>>, mut enabled: b
 
 /// What a running block looks like on Discord. `blocks`: (name, locked, end time) of each block
 /// that's on; None when no block is on.
-pub fn activity(blocks: &[(String, bool, Option<i64>)], sites: usize, apps: usize) -> Option<Value> {
+pub fn activity(blocks: &[(String, bool, Option<i64>)], sites: usize, apps: usize, now: i64) -> Option<Value> {
     if blocks.is_empty() {
         return None;
     }
@@ -318,6 +318,14 @@ pub fn activity(blocks: &[(String, bool, Option<i64>)], sites: usize, apps: usiz
         (0, a) => format!("Blocking {a} program{}", if a == 1 { "" } else { "s" }),
         (s, a) => format!("Blocking {s} website{} and {a} program{}", if s == 1 { "" } else { "s" }, if a == 1 { "" } else { "s" }),
     };
+    // The block that ends soonest decides the time left; a schedule with no end has none.
+    let end = blocks.iter().filter_map(|b| b.2).min();
+    // Discord's mobile app doesn't show the countdown, so the time left is also written out,
+    // to the minute (updated once a minute).
+    let what = match end {
+        Some(end) => format!("{what} · {}", left_text(end - now)),
+        None => what,
+    };
     let mut act = json!({
         // "Competing in Program Prison" rather than "Playing": Discord shows only one game per
         // person, so as Playing it would hide (or be hidden by) a game or app such as DraftForge.
@@ -328,11 +336,24 @@ pub fn activity(blocks: &[(String, bool, Option<i64>)], sites: usize, apps: usiz
         "buttons": [{ "label": "Get Program Prison", "url": "https://github.com/demonztarz/ProgramPrison" }],
         "instance": false,
     });
-    // The block that ends soonest decides the countdown; on a schedule with no end, none.
-    if let Some(end) = blocks.iter().filter_map(|b| b.2).min() {
+    // Discord's desktop app counts down to this by itself.
+    if let Some(end) = end {
         act["timestamps"] = json!({ "end": end });
     }
     Some(act)
+}
+
+/// "1 h 23 min left", rounded up to the minute so it never says 0 while time remains.
+fn left_text(ms: i64) -> String {
+    let mins = (ms.max(0) + 59_999) / 60_000;
+    let (d, h, m) = (mins / 1440, (mins % 1440) / 60, mins % 60);
+    match (d, h, m) {
+        (0, 0, m) => format!("{m} min left"),
+        (0, h, 0) => format!("{h} h left"),
+        (0, h, m) => format!("{h} h {m} min left"),
+        (d, 0, _) => format!("{d} d left"),
+        (d, h, _) => format!("{d} d {h} h left"),
+    }
 }
 
 #[cfg(test)]
@@ -351,16 +372,21 @@ mod tests {
 
     #[test]
     fn activity_text() {
-        assert_eq!(activity(&[], 3, 1), None);
-        let a = activity(&[("Deep work".into(), true, Some(5000)), ("Evenings".into(), false, Some(3000))], 5, 2).unwrap();
+        assert_eq!(activity(&[], 3, 1, 0), None);
+        let a = activity(&[("Deep work".into(), true, Some(5000)), ("Evenings".into(), false, Some(3000))], 5, 2, 0).unwrap();
         assert_eq!(a["details"], "Locked in: Deep work + 1 more");
-        assert_eq!(a["state"], "Blocking 5 websites and 2 programs");
+        assert_eq!(a["state"], "Blocking 5 websites and 2 programs · 1 min left", "time left in words, for Discord mobile");
         assert_eq!(a["timestamps"]["end"], 3000, "soonest end");
         assert_eq!(a["type"], 5, "Competing, so it can show next to a game");
-        let b = activity(&[("Work".into(), false, None)], 1, 0).unwrap();
+        let b = activity(&[("Work".into(), false, None)], 1, 0, 0).unwrap();
         assert_eq!(b["details"], "Focusing: Work");
         assert_eq!(b["state"], "Blocking 1 website");
         assert!(b.get("timestamps").is_none(), "no countdown without an end");
+        assert_eq!(left_text(83 * 60_000), "1 h 23 min left");
+        assert_eq!(left_text(60 * 60_000), "1 h left");
+        assert_eq!(left_text(30 * 60_000 - 1), "30 min left", "rounds up");
+        assert_eq!(left_text(1), "1 min left");
+        assert_eq!(left_text(26 * 3_600_000), "1 d 2 h left");
     }
 
     #[test]
