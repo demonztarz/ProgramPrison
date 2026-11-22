@@ -78,7 +78,8 @@ begin
   Result := True;
   if Exec(ExpandConstant('{app}\programprison.exe'), '--uninstall-check', '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 2) then
   begin
-    MsgBox('A locked block is running, so Program Prison can''t be uninstalled until it ends.', mbInformation, MB_OK);
+    // Suppressible: shown normally, skipped by a silent (/SUPPRESSMSGBOXES) uninstall.
+    SuppressibleMsgBox('A locked block is running, so Program Prison can''t be uninstalled until it ends.', mbInformation, MB_OK, IDOK);
     Result := False;
   end;
 end;

@@ -60,7 +60,13 @@ jobs:
 
       - name: Installer (build, install, refuse uninstall while locked, uninstall)
         shell: pwsh
+        timeout-minutes: 12
         run: |
+          # Runs a program and fails (instead of hanging) if it doesn't finish in time.
+          function Run-Wait($file, $argList, $secs = 180) {
+            $p = Start-Process $file -ArgumentList $argList -PassThru
+            if (-not $p.WaitForExit($secs * 1000)) { $p.Kill(); throw "$file $argList did not finish within $secs s" }
+          }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
           & $iscc "/DAppVersion=$env:VERSION" installer\programprison.iss
@@ -69,11 +75,11 @@ jobs:
           $app = "$env:LOCALAPPDATA\Programs\Program Prison"
 
           # Install silently for this user (no admin) and check what landed.
-          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Run-Wait $setup @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
           if (-not (Test-Path "$app\programprison.exe")) { throw "not installed" }
           if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Program Prison.lnk")) { throw "no Start menu shortcut" }
           $json = Join-Path $env:RUNNER_TEMP "installed-selftest.json"
-          Start-Process "$app\programprison.exe" -ArgumentList "--self-test=$json" -Wait
+          Run-Wait "$app\programprison.exe" @("--self-test=$json") 60
           if (-not (Get-Content $json | ConvertFrom-Json).ok) { throw "installed copy failed its self-test" }
           Write-Host "installed and working"
 
@@ -82,15 +88,16 @@ jobs:
           New-Item -ItemType Directory -Force $env:PROGRAMPRISON_DATA | Out-Null
           $ends = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 3600000
           Set-Content "$env:PROGRAMPRISON_DATA\state.json" "{`"version`":2,`"blocks`":[{`"id`":`"t`",`"name`":`"T`",`"sites`":[`"example.com`"],`"lock`":{`"type`":`"locked`"},`"session`":{`"startedAt`":0,`"endsAt`":$ends}}]}"
-          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
-          Start-Sleep 3
+          Run-Wait "$app\unins000.exe" @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
+          Start-Sleep 8
           if (-not (Test-Path "$app\programprison.exe")) { throw "uninstalled during a locked block" }
           Write-Host "uninstall refused while locked"
 
           # No locked block: uninstall removes it.
           Remove-Item -Recurse -Force $env:PROGRAMPRISON_DATA
-          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
-          Start-Sleep 5
+          Run-Wait "$app\unins000.exe" @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
+          # The uninstaller hands over to a copy of itself and returns at once: wait for it.
+          for ($i = 0; $i -lt 60 -and (Test-Path "$app\programprison.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$app\programprison.exe") { throw "uninstall left the program behind" }
           if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Program Prison.lnk") { throw "uninstall left the shortcut behind" }
           Write-Host "uninstalled cleanly"
