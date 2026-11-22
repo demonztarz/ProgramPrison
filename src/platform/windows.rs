@@ -511,7 +511,7 @@ unsafe fn fill(hdc: HDC, l: i32, t: i32, r: i32, b: i32, c: COLORREF) {
     }
 }
 
-/// The cell: a dark wall, steel bars with shadows behind them, and crossbars top and bottom.
+/// The cell: a dark wall with steel bars running top to bottom, each casting a shadow.
 unsafe fn paint_bars(hdc: HDC, w: i32, h: i32, px: impl Fn(i32) -> i32) {
     unsafe {
         // the wall: a little lighter just above the middle
@@ -529,18 +529,11 @@ unsafe fn paint_bars(hdc: HDC, w: i32, h: i32, px: impl Fn(i32) -> i32) {
         }
         let bar_w = px(18);
         let gap = px(74);
-        let rail = px(20);
-        let (top, bottom) = (px(28).min(h / 4), (h - px(28)).max(h * 3 / 4));
+        let (top, bottom) = (0, h);
         let shadow_w = px(10);
         let darker = |(r, g, b): (u8, u8, u8), a: f32| rgb((r as f32 * (1.0 - a)) as u8, (g as f32 * (1.0 - a)) as u8, (b as f32 * (1.0 - a)) as u8);
-        // Painted back to front: shadows on the wall, then the bars, then the crossbars.
+        // Painted back to front: shadows on the wall, then the bars.
         let bars: Vec<i32> = (0..).map(|i| px(40) + i * gap).take_while(|&x| x < w).collect();
-        for ry in [top, bottom - rail] {
-            for j in 0..px(8) {
-                let a = 0.4 * (1.0 - j as f32 / px(8) as f32);
-                fill(hdc, 0, ry + rail + j, w, ry + rail + j + 1, darker(wall(ry + rail + j), a));
-            }
-        }
         for s in 0..shadow_w {
             let a = 0.4 * (1.0 - s as f32 / shadow_w as f32);
             let c = darker(wall(h / 2), a);
@@ -552,11 +545,6 @@ unsafe fn paint_bars(hdc: HDC, w: i32, h: i32, px: impl Fn(i32) -> i32) {
             let c = steel(i as f32 / (bar_w - 1).max(1) as f32);
             for &x in &bars {
                 fill(hdc, x + i, top, x + i + 1, bottom, c);
-            }
-        }
-        for ry in [top, bottom - rail] {
-            for j in 0..rail {
-                fill(hdc, 0, ry + j, w, ry + j + 1, steel(j as f32 / (rail - 1).max(1) as f32));
             }
         }
     }
@@ -972,8 +960,9 @@ mod tests {
             let highlight = lum(40 + 6, 200); // a third of the way across the first bar
             let wall = lum(40 + 18 + 30, 200); // between two bars
             let shadow = lum(40 + 18 + 1, 200); // just right of a bar
-            let rail = lum(300, 28 + 6); // the top crossbar
-            let under_rail = lum(40 + 6, 28 + 20 + 2); // a bar just below the crossbar: still bright
+            let top = lum(40 + 6, 1); // bars run the full height: bright at the very top...
+            let bottom = lum(40 + 6, 398); // ...and the very bottom
+            let no_crossbar = lum(40 + 18 + 30, 10); // no crossbar near the top: just wall
             SelectObject(hdc, old);
             let _ = DeleteObject(HGDIOBJ(bmp.0));
             let _ = DeleteDC(hdc);
@@ -982,8 +971,8 @@ mod tests {
             assert!(wall < 60, "wall {wall}");
             assert!(highlight - wall > 140, "contrast {highlight} vs {wall}");
             assert!(shadow < wall, "shadow {shadow} darker than wall {wall}");
-            assert!(rail > 120, "crossbar {rail}");
-            assert!(under_rail > 150, "bars aren't cut by the crossbar shadow: {under_rail}");
+            assert!(top > 180 && bottom > 180, "bars reach top {top} and bottom {bottom}");
+            assert!(no_crossbar < 60, "no crossbar: {no_crossbar}");
         }
     }
 }
