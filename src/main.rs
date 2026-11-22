@@ -7,6 +7,11 @@ fn main() {
         programprison::platform::run_service();
     } else if let Some(out) = args.iter().find_map(|a| a.strip_prefix("--self-test=")) {
         self_test(out);
+    } else if args.iter().any(|a| a == "--uninstall-check") {
+        // Used by the uninstaller: exit code 2 = a locked block is running, don't uninstall.
+        std::process::exit(if programprison::service::locked_on_disk() { 2 } else { 0 });
+    } else if args.iter().any(|a| a == "--uninstall") {
+        programprison::service::uninstall();
     } else if let Some(out) = args.iter().find_map(|a| a.strip_prefix("--gui-smoke=")) {
         programprison::gui::run(Some(out.to_string()));
     } else {

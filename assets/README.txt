@@ -7,8 +7,13 @@ schedule, and can lock itself so you can't back out halfway.
 
 GETTING STARTED
 ---------------
-1. Move Program Prison.exe somewhere permanent, for example Documents\Program Prison.
-   It starts itself at login from wherever it is, so don't leave it in Downloads.
+1. Run "Program Prison Setup" to install it (just for your account, no administrator
+   prompt). It adds Program Prison to the Start menu. To update later, run a newer
+   installer: your blocks carry on. Uninstall from Settings > Apps (not possible while a
+   locked block is running).
+   Using the single file instead? Move Program Prison.exe somewhere permanent, for
+   example Documents\Program Prison. It starts itself at login from wherever it is, so
+   don't leave it in Downloads.
 2. Double-click it. If Windows SmartScreen warns you, click "More info" and then
    "Run anyway". That only happens the first time.
 3. The settings window opens, and an orange bars icon appears in the system tray

@@ -393,3 +393,25 @@ pub fn dispatch(svc: &std::sync::Mutex<Service>, req: Request) -> (Response, boo
     }
     svc.lock().unwrap().handle(req)
 }
+
+/// Whether the saved state has a locked block running right now (for the uninstaller, which
+/// may run while the blocker isn't running).
+pub fn locked_on_disk() -> bool {
+    let path = util::data_dir().join("state.json");
+    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    let now = engine::now_ms();
+    State::from_json(&text).blocks.iter().any(|b| b.is_locked(now))
+}
+
+/// Run by the uninstaller (after `locked_on_disk` said no): stops the blocker, removes its
+/// website entries from the hosts file and its start-at-login entry. Settings are kept, so
+/// reinstalling picks up where it left off.
+pub fn uninstall() {
+    if let Some(c) = crate::ipc::Client::connect() {
+        let _ = c.send(&Request::Quit);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    let _ = hosts::sync(&hosts::hosts_path(), &[]);
+    crate::autostart::remove();
+    util::log("uninstalled: blocker stopped, hosts entries and start at login removed");
+}

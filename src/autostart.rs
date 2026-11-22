@@ -10,6 +10,14 @@ fn exe() -> Option<String> {
     std::env::var("APPIMAGE").ok().or_else(|| std::env::current_exe().ok().map(|p| p.display().to_string()))
 }
 
+/// Removes the start-at-login entry, whatever build made it (used when uninstalling).
+pub fn remove() {
+    if std::env::var_os("PROGRAMPRISON_DATA").is_some() {
+        return; // test runs never touch the real entry
+    }
+    imp::apply(false, "");
+}
+
 pub fn apply(on: bool) {
     if !enabled() {
         return;

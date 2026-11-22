@@ -58,6 +58,43 @@ jobs:
           if (-not (Get-Content $smoke | ConvertFrom-Json).ok) { throw "window smoke test failed" }
           Stop-Process -Name programprison -Force -ErrorAction SilentlyContinue
 
+      - name: Installer (build, install, refuse uninstall while locked, uninstall)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DAppVersion=$env:VERSION" installer\programprison.iss
+          if ($LASTEXITCODE) { throw "building the installer failed" }
+          $setup = (Resolve-Path "out\Program Prison Setup $env:VERSION.exe").Path
+          $app = "$env:LOCALAPPDATA\Programs\Program Prison"
+
+          # Install silently for this user (no admin) and check what landed.
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (-not (Test-Path "$app\programprison.exe")) { throw "not installed" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Program Prison.lnk")) { throw "no Start menu shortcut" }
+          $json = Join-Path $env:RUNNER_TEMP "installed-selftest.json"
+          Start-Process "$app\programprison.exe" -ArgumentList "--self-test=$json" -Wait
+          if (-not (Get-Content $json | ConvertFrom-Json).ok) { throw "installed copy failed its self-test" }
+          Write-Host "installed and working"
+
+          # A locked block is running: uninstalling must be refused.
+          $env:PROGRAMPRISON_DATA = Join-Path $env:RUNNER_TEMP "locked-data"
+          New-Item -ItemType Directory -Force $env:PROGRAMPRISON_DATA | Out-Null
+          $ends = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 3600000
+          Set-Content "$env:PROGRAMPRISON_DATA\state.json" "{`"version`":2,`"blocks`":[{`"id`":`"t`",`"name`":`"T`",`"sites`":[`"example.com`"],`"lock`":{`"type`":`"locked`"},`"session`":{`"startedAt`":0,`"endsAt`":$ends}}]}"
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep 3
+          if (-not (Test-Path "$app\programprison.exe")) { throw "uninstalled during a locked block" }
+          Write-Host "uninstall refused while locked"
+
+          # No locked block: uninstall removes it.
+          Remove-Item -Recurse -Force $env:PROGRAMPRISON_DATA
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep 5
+          if (Test-Path "$app\programprison.exe") { throw "uninstall left the program behind" }
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Program Prison.lnk") { throw "uninstall left the shortcut behind" }
+          Write-Host "uninstalled cleanly"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Program Prison - windows

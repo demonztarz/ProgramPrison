@@ -66,6 +66,9 @@ pub struct PrisonApp {
     /// Fresh state from the background poller (the window itself never waits on the blocker).
     poll_rx: Option<mpsc::Receiver<Result<PublicState, String>>>,
     frames: u64,
+    /// Wall-clock time of the last background tick, to notice the PC waking from sleep.
+    last_tick: i64,
+    restarting: bool,
     smoke: Option<Smoke>,
 }
 
@@ -155,6 +158,8 @@ impl PrisonApp {
             shown_requests: None,
             poll_rx: None,
             frames: 0,
+            last_tick: 0,
+            restarting: false,
             smoke: None,
         };
         app.poll();
@@ -392,6 +397,24 @@ fn start_end(d: &StartDialog) -> Result<i64, String> {
 // ---------- drawing ----------
 
 impl eframe::App for PrisonApp {
+    /// Runs about once a second even while the window is minimized (the background poller
+    /// asks for it). A gap of more than half a minute means the PC slept or hibernated; the
+    /// graphics connection can come back slow after that, so the window reopens itself fresh.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let now = engine::now_ms();
+        if self.last_tick > 0 && now - self.last_tick > 30_000 && !self.restarting && self.smoke.is_none() {
+            self.restarting = true;
+            crate::util::log(format!("window: the PC was asleep for {} s; reopening the window with fresh graphics", (now - self.last_tick) / 1000));
+            if let Ok(exe) = std::env::current_exe() {
+                let mut c = crate::util::command(&exe.display().to_string());
+                c.env("PROGRAMPRISON_REOPEN", "1");
+                let _ = c.spawn();
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        self.last_tick = now;
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
@@ -1483,8 +1506,17 @@ fn window_lock() -> Option<std::fs::File> {
     let dir = crate::util::data_dir();
     let _ = std::fs::create_dir_all(&dir);
     let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("window.lock")).ok()?;
-    f.try_lock().ok()?;
-    Some(f)
+    // Reopening after sleep: the old window is still closing, so wait for it a moment.
+    let wait = if std::env::var_os("PROGRAMPRISON_REOPEN").is_some() { 50 } else { 0 };
+    for i in 0..=wait {
+        if f.try_lock().is_ok() {
+            return Some(f);
+        }
+        if i < wait {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+    None
 }
 
 /// Connects to the background blocker, starting it if it isn't running.

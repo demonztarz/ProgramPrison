@@ -15,7 +15,7 @@ Every push builds the app with GitHub Actions (**Actions → Build → Artifacts
 
 | Platform | File |
 |---|---|
-| Windows | `Program Prison.exe`: a single file, no installer |
+| Windows | `Program Prison Setup <version>.exe`: the installer (recommended), or `Program Prison.exe`: a single file, no install |
 | macOS | `Program Prison <version> (macOS).zip`: unzip and move `Program Prison.app` to Applications |
 | Linux | `program-prison-<version>-linux-x64.tar.gz` |
 
@@ -60,9 +60,13 @@ right-click the app and choose **Open** the first time.
 
 ## How to use it
 
-1. **Put the program somewhere permanent** (for example `Documents\Program Prison`) and run it.
-   It starts itself at login from wherever it is. The window opens, and an orange bars icon
-   appears in the system tray (click **^** near the clock if you don't see it).
+1. **Install it**: run `Program Prison Setup <version>.exe`. It installs for your user account
+   only (no administrator prompt) into `%LOCALAPPDATA%\Programs\Program Prison`, adds a Start
+   menu entry and can add a desktop shortcut. To update, just run a newer installer: your blocks
+   carry on. Uninstall it from **Settings → Apps** (refused while a locked block is running).
+   Prefer no install? Put `Program Prison.exe` somewhere permanent and run it instead.
+   The orange bars icon appears in the system tray (click **^** near the clock if you don't
+   see it).
 2. **Make a block**: **Create your first block** (later: **+ New block**). Click its name at
    the top to rename it.
 3. **Websites tab**: type a site or paste a link, then **Add**, or use **Quick add**. The first
