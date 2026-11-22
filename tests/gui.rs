@@ -24,6 +24,7 @@ fn start_service() -> (Child, std::path::PathBuf) {
         .env("PROGRAMPRISON_DATA", dir.join("data"))
         .env("PROGRAMPRISON_HOSTS", &hosts)
         .env("PROGRAMPRISON_TICK_MS", "300")
+            .env("PROGRAMPRISON_DISCORD_CLIENT_ID", "") // never show test blocks on a real Discord
         .spawn()
         .unwrap();
     let end = Instant::now() + Duration::from_secs(10);

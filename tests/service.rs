@@ -39,6 +39,7 @@ impl Env {
             .env("PROGRAMPRISON_HOSTS", &self.hosts)
             .env("PROGRAMPRISON_DEBUG", &self.log)
             .env("PROGRAMPRISON_TICK_MS", "300")
+            .env("PROGRAMPRISON_DISCORD_CLIENT_ID", "") // never show test blocks on a real Discord
             .spawn()
             .expect("start service");
         wait_for("service to answer", 10, || Client::connect().is_some());

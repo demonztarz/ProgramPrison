@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 /// The Discord application whose name ("Program Prison") appears on profiles. Created at
 /// https://discord.com/developers/applications. PROGRAMPRISON_DISCORD_CLIENT_ID overrides it.
-pub const CLIENT_ID: &str = "";
+pub const CLIENT_ID: &str = "1573937020118761514";
 
 const OP_HANDSHAKE: u32 = 0;
 const OP_FRAME: u32 = 1;
