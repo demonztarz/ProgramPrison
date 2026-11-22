@@ -162,24 +162,37 @@ impl Conn {
 
 // ---------- the thread ----------
 
+enum Msg {
+    Show(Option<Value>),
+    Enabled(bool),
+}
+
+const REFRESH: Duration = Duration::from_secs(60);
+
 /// Shows and clears the status from a background thread.
+///
+/// It connects as soon as the Discord app is running and stays connected, even while no block
+/// is on. Discord checks Program Prison's ID once, when connecting, by looking it up on
+/// discord.com; connecting early means that check is done before a block that includes
+/// discord.com as a website cuts discord.com off.
 pub struct Presence {
-    tx: Sender<Option<Value>>,
+    tx: Sender<Msg>,
     status: Arc<Mutex<String>>,
     last: Option<Option<Value>>,
+    enabled: bool,
 }
 
 impl Presence {
-    pub fn start() -> Presence {
+    pub fn start(enabled: bool) -> Presence {
         let (tx, rx) = mpsc::channel();
         let status = Arc::new(Mutex::new(String::new()));
         let id = client_id();
         *status.lock().unwrap() = if valid_id(&id) { "Not connected yet.".into() } else { "Not available in this build (no Discord application ID).".into() };
         if valid_id(&id) {
             let st = status.clone();
-            std::thread::spawn(move || run(id, rx, st));
+            std::thread::spawn(move || run(id, rx, st, enabled));
         }
-        Presence { tx, status, last: None }
+        Presence { tx, status, last: None, enabled }
     }
 
     /// What to show, or None to show nothing. Repeats are ignored.
@@ -188,7 +201,15 @@ impl Presence {
             return;
         }
         self.last = Some(activity.clone());
-        let _ = self.tx.send(activity);
+        let _ = self.tx.send(Msg::Show(activity));
+    }
+
+    /// The switch in Settings: off disconnects from Discord completely.
+    pub fn set_enabled(&mut self, on: bool) {
+        if self.enabled != on {
+            self.enabled = on;
+            let _ = self.tx.send(Msg::Enabled(on));
+        }
     }
 
     pub fn status(&self) -> String {
@@ -196,7 +217,7 @@ impl Presence {
     }
 }
 
-fn run(id: String, rx: Receiver<Option<Value>>, status: Arc<Mutex<String>>) {
+fn run(id: String, rx: Receiver<Msg>, status: Arc<Mutex<String>>, mut enabled: bool) {
     let note = |s: String| {
         crate::util::debug(format!("discord: {s}"));
         *status.lock().unwrap() = s;
@@ -205,24 +226,38 @@ fn run(id: String, rx: Receiver<Option<Value>>, status: Arc<Mutex<String>>) {
     let mut sent: Option<Option<Value>> = None;
     let mut conn: Option<Conn> = None;
     let mut next_try = Instant::now();
+    let mut last_write = Instant::now();
+    let apply = |m: Msg, want: &mut Option<Value>, enabled: &mut bool| match m {
+        Msg::Show(a) => *want = a,
+        Msg::Enabled(on) => *enabled = on,
+    };
     loop {
-        // Wait for a change; while something should be shown but Discord isn't connected, wake
-        // up to try again.
-        let timeout = if want.is_some() && conn.is_none() { next_try.saturating_duration_since(Instant::now()) } else { Duration::from_secs(3600) };
+        // Wake for a change, to retry connecting, or for the once-a-minute check that Discord
+        // is still there (so a restarted Discord is reconnected before the next block).
+        let timeout = match (enabled, conn.is_some()) {
+            (false, _) => Duration::from_secs(3600),
+            (true, false) => next_try.saturating_duration_since(Instant::now()),
+            (true, true) => (last_write + REFRESH).saturating_duration_since(Instant::now()),
+        };
         match rx.recv_timeout(timeout) {
-            Ok(a) => {
-                want = a;
+            Ok(m) => {
+                apply(m, &mut want, &mut enabled);
                 // let a burst of changes settle, keep only the last
                 let until = Instant::now() + SETTLE;
-                while let Ok(a) = rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
-                    want = a;
+                while let Ok(m) = rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                    apply(m, &mut want, &mut enabled);
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
-        if want.is_none() && conn.is_none() {
-            continue; // nothing to show and not connected: nothing to do
+        if !enabled {
+            if let Some(mut c) = conn.take() {
+                let _ = c.set_activity(&None); // clear it before letting go
+            }
+            sent = None;
+            note("Off.".into());
+            continue;
         }
         if conn.is_none() {
             if Instant::now() < next_try {
@@ -230,7 +265,8 @@ fn run(id: String, rx: Receiver<Option<Value>>, status: Arc<Mutex<String>>) {
             }
             match Conn::connect(&id) {
                 Ok((c, user)) => {
-                    note(if user.is_empty() { "Connected to Discord.".into() } else { format!("Connected to Discord as {user}.") });
+                    let who = if user.is_empty() { String::new() } else { format!(" as {user}") };
+                    note(format!("Connected to Discord{who}."));
                     conn = Some(c);
                     sent = None;
                 }
@@ -241,26 +277,26 @@ fn run(id: String, rx: Receiver<Option<Value>>, status: Arc<Mutex<String>>) {
                 }
             }
         }
-        if sent.as_ref() == Some(&want) {
+        let due = last_write.elapsed() >= REFRESH;
+        if sent.as_ref() == Some(&want) && !due {
             continue;
         }
         match conn.as_mut().unwrap().set_activity(&want) {
             Ok(()) => {
-                note(match &want {
-                    Some(a) => format!("Showing on Discord: {}.", a["details"].as_str().unwrap_or("")),
-                    None => "Connected; nothing to show while no block is on.".into(),
-                });
+                last_write = Instant::now();
+                if sent.as_ref() != Some(&want) {
+                    note(match &want {
+                        Some(a) => format!("Showing on Discord: {}.", a["details"].as_str().unwrap_or("")),
+                        None => "Connected to Discord, ready to show your next block.".into(),
+                    });
+                }
                 sent = Some(want.clone());
             }
             Err(e) => {
-                note(e);
+                note(format!("{e} Reconnecting."));
                 conn = None;
                 next_try = Instant::now() + Duration::from_secs(2);
             }
-        }
-        // Nothing left to show: let Discord go until the next block.
-        if want.is_none() {
-            conn = None;
         }
     }
 }

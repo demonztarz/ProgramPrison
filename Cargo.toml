@@ -1,6 +1,6 @@
 [package]
 name = "programprison"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Block distracting websites and programs on a timer or a weekly schedule, with locks that are hard to undo."
 publish = false

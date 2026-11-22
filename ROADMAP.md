@@ -29,6 +29,32 @@ Notes for whoever builds it:
 - The old code is in the git history: `random_text()` in `src/engine.rs` before the
   "Random-text lock now asks for a chain of random words" commit.
 
+### Browser extension for website blocking
+
+Today websites are blocked through the system hosts file, which applies to the whole PC. That
+causes a clash: blocking `discord.com` also cuts off the Discord desktop app, which then can't
+recognise Program Prison and stops showing the Discord status. (0.3 works around it by connecting
+to Discord before a block starts, but that doesn't help if the PC starts up during such a block.)
+
+A small Program Prison extension for Chrome, Edge and Firefox would block sites inside the
+browsers only, leaving desktop apps such as Discord untouched. It would also allow:
+
+- blocking all subdomains of a site (the hosts file can't do wildcards), or single pages
+  (`youtube.com/shorts`)
+- a proper "blocked by Program Prison" page with the time left, instead of a connection error
+- blocking that DNS-over-HTTPS settings can't bypass
+
+Notes for whoever builds it:
+
+- The extension talks to the background blocker through native messaging (a small host
+  registered per browser) or the existing local connection, and asks which sites are blocked
+  right now.
+- Keep the hosts file as the fallback for browsers without the extension, and let each website
+  choose "browsers only" (extension) or "whole PC" (hosts file).
+- Locks apply: while a block is locked, the extension can't be switched off from Program
+  Prison, and Program Prison notices if it's removed from a browser and falls back to the hosts
+  file.
+
 ## Ideas
 
 - Tray icon on macOS and Linux (today you reopen Program Prison from your apps).

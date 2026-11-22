@@ -39,6 +39,7 @@ impl Service {
         let state_path = dir.join("state.json");
         let state = std::fs::read_to_string(&state_path).map(|t| State::from_json(&t)).unwrap_or_default();
         let hosts_path = hosts::hosts_path();
+        let discord_on = state.settings.discord;
         Service {
             state,
             state_path,
@@ -47,7 +48,8 @@ impl Service {
             last_domains: None,
             last_hosts_check: None,
             challenges: HashMap::new(),
-            presence: crate::discord::Presence::start(),
+            // Connects right away (if switched on), before any block can cut discord.com off.
+            presence: crate::discord::Presence::start(discord_on),
             cover_supported,
             last_wall: engine::now_ms(),
             last_mono: mono_ms(),
@@ -325,6 +327,7 @@ impl Service {
                     }
                     if let Some(on) = discord {
                         self.state.settings.discord = on;
+                        self.presence.set_enabled(on);
                     }
                     self.changed()
                 }

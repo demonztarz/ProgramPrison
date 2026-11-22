@@ -42,6 +42,7 @@ fn fake_discord(listener: UnixListener, tx: mpsc::Sender<Value>) {
                     s.write_all(&encode(1, &reply)).unwrap();
                     let _ = tx.send(json!({ "activity": msg["args"]["activity"] }));
                 }
+                let _ = tx.send(json!({ "closed": true }));
             });
         }
     });
@@ -88,32 +89,51 @@ fn shows_running_blocks_on_discord() {
         }
         let call = |r: Request| Client::connect().unwrap().send(&r).unwrap();
 
-        eprintln!("• nothing is sent to Discord while no block is on");
-        assert!(rx.recv_timeout(Duration::from_secs(2)).is_err(), "no connection without a running block");
+        eprintln!("• connects as soon as Discord is running, before any block");
+        // (so a block that later cuts off discord.com can't stop Discord recognising it)
+        let hello = next(&rx, "handshake", |v| v.get("handshake").is_some());
+        assert_eq!(hello["handshake"]["client_id"], "123456789012345678");
+        next(&rx, "empty status", |v| v.get("activity").is_some_and(|a| a.is_null()));
+        let status = call(Request::GetState).state.unwrap().discord_status;
+        assert!(status.contains("ready to show your next block"), "{status}");
 
-        eprintln!("• starting a locked block shows it, with Discord counting down to the end");
+        eprintln!("• a block shows up over that same connection, and ending it keeps the connection");
         let id = call(Request::CreateBlock { name: "Deep work".into() }).id.unwrap();
         call(Request::UpdateBlock { id: id.clone(), edit: programprison::engine::Edit { sites: Some(vec!["reddit.com".into(), "x.com".into()]), ..Default::default() } });
+        call(Request::StartBlock { id: id.clone(), ends_at: programprison::engine::now_ms() + 20 * 60_000, minutes: None });
+        let a = next(&rx, "activity", |v| v.get("activity").is_some_and(|a| !a.is_null()))["activity"].clone();
+        assert_eq!(a["details"], "Focusing: Deep work");
+        call(Request::StopBlock { id: id.clone(), answer: String::new() });
+        next(&rx, "status cleared", |v| v.get("activity").is_some_and(|a| a.is_null()));
+        let end = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < end {
+            if let Ok(v) = rx.recv_timeout(Duration::from_millis(200)) {
+                assert!(v.get("handshake").is_none() && v.get("closed").is_none(), "stayed connected: {v}");
+            }
+        }
+
+        eprintln!("• a locked block shows as Locked in, with Discord counting down to the end");
         call(Request::SetLock { id: id.clone(), lock: programprison::engine::LockRequest { kind: "locked".into(), length: 0, password: String::new() } });
         let ends = programprison::engine::now_ms() + 45 * 60_000;
         call(Request::StartBlock { id: id.clone(), ends_at: ends, minutes: None });
-        let hello = next(&rx, "handshake", |v| v.get("handshake").is_some());
-        assert_eq!(hello["handshake"]["client_id"], "123456789012345678");
         let a = next(&rx, "activity", |v| v.get("activity").is_some_and(|a| !a.is_null()))["activity"].clone();
         assert_eq!(a["details"], "Locked in: Deep work");
         assert_eq!(a["state"], "Blocking 2 websites");
         assert_eq!(a["timestamps"]["end"], ends);
+        assert_eq!(a["type"], 5);
         assert_eq!(a["assets"]["large_text"], "Program Prison");
         let status = call(Request::GetState).state.unwrap().discord_status;
         assert!(status.contains("Showing on Discord"), "{status}");
 
-        eprintln!("• switching it off in Settings clears the status");
+        eprintln!("• switching it off clears the status and disconnects");
         call(Request::UpdateSettings { start_at_login: None, discord: Some(false) });
         next(&rx, "status cleared", |v| v.get("activity").is_some_and(|a| a.is_null()));
+        next(&rx, "disconnected", |v| v.get("closed").is_some());
         assert_eq!(call(Request::GetState).state.unwrap().discord_status, "Off.");
 
-        eprintln!("• switching it back on shows it again");
+        eprintln!("• switching it back on reconnects and shows it again");
         call(Request::UpdateSettings { start_at_login: None, discord: Some(true) });
+        next(&rx, "handshake again", |v| v.get("handshake").is_some());
         next(&rx, "activity again", |v| v.get("activity").is_some_and(|a| a["details"] == "Locked in: Deep work"));
     });
     let _ = svc.kill();
