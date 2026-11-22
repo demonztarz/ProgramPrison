@@ -16,7 +16,13 @@ pub enum Request {
     CreateBlock { name: String },
     UpdateBlock { id: String, edit: Edit },
     DeleteBlock { id: String },
-    StartBlock { id: String, ends_at: i64 },
+    /// `minutes`: the length picked with "For", remembered as a recent length.
+    StartBlock {
+        id: String,
+        ends_at: i64,
+        #[serde(default)]
+        minutes: Option<u32>,
+    },
     SetLock { id: String, lock: LockRequest },
     Challenge { id: String },
     StopBlock { id: String, answer: String },

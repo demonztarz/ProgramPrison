@@ -1,5 +1,5 @@
 //! Discord Rich Presence: while a block is on, your Discord profile shows
-//! "Playing Program Prison · Locked in: Deep work · 1:23:45 left".
+//! "Competing in Program Prison · Locked in: Deep work · 1:23:45 left".
 //!
 //! Talks to the Discord desktop app over its local connection (a named pipe on Windows, a
 //! socket elsewhere). Runs on its own thread: if Discord is closed, slow or frozen, blocking is
@@ -283,6 +283,9 @@ pub fn activity(blocks: &[(String, bool, Option<i64>)], sites: usize, apps: usiz
         (s, a) => format!("Blocking {s} website{} and {a} program{}", if s == 1 { "" } else { "s" }, if a == 1 { "" } else { "s" }),
     };
     let mut act = json!({
+        // "Competing in Program Prison" rather than "Playing": Discord shows only one game per
+        // person, so as Playing it would hide (or be hidden by) a game or app such as DraftForge.
+        "type": 5,
         "details": details,
         "state": what,
         "assets": { "large_image": "https://raw.githubusercontent.com/demonztarz/ProgramPrison/HEAD/assets/logo-1024.png", "large_text": "Program Prison" },
@@ -317,6 +320,7 @@ mod tests {
         assert_eq!(a["details"], "Locked in: Deep work + 1 more");
         assert_eq!(a["state"], "Blocking 5 websites and 2 programs");
         assert_eq!(a["timestamps"]["end"], 3000, "soonest end");
+        assert_eq!(a["type"], 5, "Competing, so it can show next to a game");
         let b = activity(&[("Work".into(), false, None)], 1, 0).unwrap();
         assert_eq!(b["details"], "Focusing: Work");
         assert_eq!(b["state"], "Blocking 1 website");

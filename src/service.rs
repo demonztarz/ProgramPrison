@@ -243,11 +243,16 @@ impl Service {
                     self.changed()
                 }
             },
-            Request::StartBlock { id, ends_at } => match self.block_mut(&id) {
+            Request::StartBlock { id, ends_at, minutes } => match self.block_mut(&id) {
                 None => self.fail(gone),
                 Some(b) => match b.start(now, ends_at) {
                     Err(e) => self.fail(e),
-                    Ok(()) => self.changed(),
+                    Ok(()) => {
+                        if let Some(m) = minutes {
+                            engine::remember_duration(&mut self.state.settings.recent_minutes, m);
+                        }
+                        self.changed()
+                    }
                 },
             },
             Request::SetLock { id, lock } => match self.block_mut(&id) {

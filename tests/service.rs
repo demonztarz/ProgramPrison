@@ -154,7 +154,8 @@ fn run(env: &Env, svc: &mut Child) {
     step("start for 30 minutes: hosts file written");
     std::thread::sleep(Duration::from_millis(if cfg!(windows) { 1500 } else { 300 }));
     let now = programprison::engine::now_ms();
-    ok(Request::StartBlock { id: id.clone(), ends_at: now + 30 * 60_000 });
+    ok(Request::StartBlock { id: id.clone(), ends_at: now + 30 * 60_000, minutes: Some(30) });
+    assert_eq!(state().settings.recent_minutes, vec![30], "the length is remembered");
     wait_for("hosts entries", 5, || env.hosts().contains("0.0.0.0 reddit.com") && env.hosts().contains("0.0.0.0 youtu.be"));
     let s = state();
     assert!(s.blocks[0].status.active && !s.blocks[0].status.locked);
@@ -220,14 +221,14 @@ fn run(env: &Env, svc: &mut Child) {
     ok(Request::SetLock { id: id.clone(), lock: LockRequest { kind: "password".into(), length: 0, password: "letmeout".into() } });
     let saved = std::fs::read_to_string(env.dir.join("data").join("state.json")).unwrap();
     assert!(!saved.contains("letmeout"), "password not stored in plain text");
-    ok(Request::StartBlock { id: id.clone(), ends_at: programprison::engine::now_ms() + 15 * 60_000 });
+    ok(Request::StartBlock { id: id.clone(), ends_at: programprison::engine::now_ms() + 15 * 60_000, minutes: None });
     assert_eq!(ok(Request::Challenge { id: id.clone() }).challenge, Some(Challenge::Password));
     assert!(!call(Request::StopBlock { id: id.clone(), answer: "nope".into() }).ok);
     ok(Request::StopBlock { id: id.clone(), answer: "letmeout".into() });
 
     step("Locked: no stop, no delete, no quitting");
     ok(Request::SetLock { id: id.clone(), lock: LockRequest { kind: "locked".into(), length: 0, password: String::new() } });
-    ok(Request::StartBlock { id: id.clone(), ends_at: programprison::engine::now_ms() + 60 * 60_000 });
+    ok(Request::StartBlock { id: id.clone(), ends_at: programprison::engine::now_ms() + 60 * 60_000, minutes: None });
     assert!(matches!(ok(Request::Challenge { id: id.clone() }).challenge, Some(Challenge::Locked { .. })));
     assert!(!call(Request::StopBlock { id: id.clone(), answer: String::new() }).ok);
     assert!(!call(Request::DeleteBlock { id: id.clone() }).ok);

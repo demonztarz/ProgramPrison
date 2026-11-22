@@ -96,7 +96,7 @@ fn shows_running_blocks_on_discord() {
         call(Request::UpdateBlock { id: id.clone(), edit: programprison::engine::Edit { sites: Some(vec!["reddit.com".into(), "x.com".into()]), ..Default::default() } });
         call(Request::SetLock { id: id.clone(), lock: programprison::engine::LockRequest { kind: "locked".into(), length: 0, password: String::new() } });
         let ends = programprison::engine::now_ms() + 45 * 60_000;
-        call(Request::StartBlock { id: id.clone(), ends_at: ends });
+        call(Request::StartBlock { id: id.clone(), ends_at: ends, minutes: None });
         let hello = next(&rx, "handshake", |v| v.get("handshake").is_some());
         assert_eq!(hello["handshake"]["client_id"], "123456789012345678");
         let a = next(&rx, "activity", |v| v.get("activity").is_some_and(|a| !a.is_null()))["activity"].clone();

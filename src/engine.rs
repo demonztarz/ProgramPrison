@@ -114,6 +114,21 @@ pub struct Settings {
     /// Show running blocks as a Discord status.
     #[serde(default = "yes")]
     pub discord: bool,
+    /// The last few block lengths started with "For", in minutes, newest first.
+    #[serde(default)]
+    pub recent_minutes: Vec<u32>,
+}
+
+pub const RECENT_DURATIONS: usize = 5;
+
+/// Puts a block length at the front of the recent list: no repeats, at most five.
+pub fn remember_duration(list: &mut Vec<u32>, minutes: u32) {
+    if minutes == 0 {
+        return;
+    }
+    list.retain(|&m| m != minutes);
+    list.insert(0, minutes);
+    list.truncate(RECENT_DURATIONS);
 }
 
 fn yes() -> bool {
@@ -122,7 +137,7 @@ fn yes() -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { start_at_login: true, discord: true }
+        Settings { start_at_login: true, discord: true, recent_minutes: vec![] }
     }
 }
 
@@ -1055,6 +1070,17 @@ mod tests {
         // saved again and reloaded: unchanged
         let again = State::from_json(&serde_json::to_string(&s).unwrap());
         assert_eq!(again.blocks[0].lock, Lock::Random { length: 25 });
+    }
+
+    #[test]
+    fn recent_durations() {
+        let mut l = vec![];
+        for m in [30, 45, 30, 60, 90, 120, 15, 0] {
+            remember_duration(&mut l, m);
+        }
+        assert_eq!(l, vec![15, 120, 90, 60, 30], "newest first, no repeats, five at most");
+        remember_duration(&mut l, 90);
+        assert_eq!(l, vec![90, 15, 120, 60, 30], "used again: back to the front");
     }
 
     #[test]

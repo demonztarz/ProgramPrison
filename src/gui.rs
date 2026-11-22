@@ -342,7 +342,8 @@ impl PrisonApp {
                 return;
             }
         };
-        let r = (self.conn)(&Request::StartBlock { id, ends_at: ends }).unwrap_or_else(Response::err);
+        let minutes = (!d.until_mode).then_some(d.hours * 60 + d.minutes);
+        let r = (self.conn)(&Request::StartBlock { id, ends_at: ends, minutes }).unwrap_or_else(Response::err);
         if let Some(s) = r.state.clone() {
             self.set_state(s);
         }
@@ -899,6 +900,7 @@ impl PrisonApp {
 
         if self.start.is_some() {
             let b = self.block().cloned();
+            let recent = self.state.as_ref().map(|s| s.settings.recent_minutes.clone()).unwrap_or_default();
             let mut close = false;
             let mut submit = false;
             Modal::new(Id::unique("start")).show(ctx, |ui| {
@@ -907,7 +909,7 @@ impl PrisonApp {
                 ui.heading(format!("Start “{name}”"));
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    for (label, m) in [("15 min", 15), ("30 min", 30), ("1 hour", 60), ("2 hours", 120), ("4 hours", 240), ("8 hours", 480), ("1 day", 1440)] {
+                    for (label, m) in [("15 min", 15), ("30 min", 30), ("45 min", 45), ("1 hour", 60), ("2 hours", 120), ("4 hours", 240), ("8 hours", 480), ("1 day", 1440)] {
                         if ui.button(label).clicked() {
                             d.hours = m / 60;
                             d.minutes = m % 60;
@@ -915,6 +917,22 @@ impl PrisonApp {
                         }
                     }
                 });
+                // The last few lengths you started blocks with.
+                if !recent.is_empty() {
+                    ui.add_space(4.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("Recent").small().color(muted(ui)));
+                        for &m in &recent {
+                            let r = ui.add(egui::Button::new(fmt_minutes(m)).corner_radius(CornerRadius::same(12)));
+                            named(&r, &format!("Recent: {}", fmt_minutes(m)));
+                            if r.clicked() {
+                                d.hours = m / 60;
+                                d.minutes = m % 60;
+                                d.until_mode = false;
+                            }
+                        }
+                    });
+                }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.radio_value(&mut d.until_mode, false, "For");
@@ -1149,7 +1167,7 @@ impl PrisonApp {
                 if ui.checkbox(&mut discord, "Show my blocks on Discord").changed() {
                     discord_change = Some(discord);
                 }
-                ui.label(RichText::new("While a block is on, your Discord friends see “Playing Program Prison” with the block's name and time left.").small().color(muted(ui)));
+                ui.label(RichText::new("While a block is on, your Discord friends see “Competing in Program Prison” with the block's name and time left.").small().color(muted(ui)));
                 if state.settings.discord {
                     ui.label(RichText::new(&state.discord_status).small());
                 }
@@ -1336,6 +1354,18 @@ fn empty_row(ui: &mut egui::Ui, text: &str) {
         ui.label(RichText::new(text).color(muted(ui)));
         ui.add_space(10.0);
     });
+}
+
+/// A block length for buttons: "45 min", "1 h", "1 h 15 min", "1 d 2 h".
+fn fmt_minutes(m: u32) -> String {
+    let (d, h, min) = (m / 1440, (m % 1440) / 60, m % 60);
+    match (d, h, min) {
+        (0, 0, min) => format!("{min} min"),
+        (0, h, 0) => format!("{h} h"),
+        (0, h, min) => format!("{h} h {min} min"),
+        (d, 0, _) => format!("{d} d"),
+        (d, h, _) => format!("{d} d {h} h"),
+    }
 }
 
 fn fmt_input(t: i64) -> String {

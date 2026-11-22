@@ -208,6 +208,18 @@ fn run(hosts: &std::path::Path) {
     assert!(!h.state().block().unwrap().status.active, "stopped after the last word");
     assert!(h.query_by_label_contains(" / 30 words").is_none(), "dialog gone");
 
+    eprintln!("• start dialog: 45 min suggestion and the recent length");
+    h.get_by_label("Start").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("45 min").is_some(), "45 min suggestion");
+    assert!(h.query_by_label("Recent: 30 min").is_some(), "the 30 minutes used earlier is in Recent");
+    h.get_by_label("Recent: 30 min").click();
+    h.run_steps(2);
+    let len = format!("{} {}", h.get_by_label("h").value().unwrap_or_default(), h.get_by_label("min").value().unwrap_or_default());
+    assert_eq!(len, "0 h 30 min", "clicking a recent length fills it in");
+    h.get_by_label("Cancel").click();
+    h.run_steps(3);
+
     eprintln!("• schedule tab renders and the preset adds hours");
     h.get_by_label_contains("Schedule").click();
     h.run_steps(3);

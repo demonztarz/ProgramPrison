@@ -47,8 +47,8 @@ right-click the app and choose **Open** the first time.
   - *Locked*: no way out until time runs out.
   While a block is locked you can **add** sites, programs and hours, but you can't remove them,
   weaken the lock, delete the block, quit Program Prison or turn off start-at-login.
-- **Discord status** (optional): while a block is on, your Discord profile shows "Playing Program
-  Prison", the block's name and the time left, counted down by Discord itself. Switch it off
+- **Discord status** (optional): while a block is on, your Discord profile shows "Competing in
+  Program Prison", the block's name and the time left, counted down by Discord itself. Switch it off
   in **Settings → Show my blocks on Discord**. It needs the Discord desktop app.
 - **Hard to get around**:
   - Starts at login.
