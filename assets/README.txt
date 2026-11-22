@@ -60,8 +60,11 @@ MAKE IT HARD TO BACK OUT
 On the Lock tab choose what it takes to stop early, then click "Save lock":
 
   No lock      - just click Stop
-  Random words - type out a chain of random words by hand, e.g.
-                 "acorn pluck tidy gecko" (pasting doesn't work)
+  Random words - type out a chain of random words, one at a time, like a
+                 typing race: each word turns green when it's right and
+                 Space locks it in; mistakes show in red. The block stops
+                 by itself after the last word. Close the window any time:
+                 your progress is kept. (Pasting doesn't work.)
   Password     - enter a password (have a friend type it so you don't know it)
   Locked       - no way to stop it; you wait until it ends
 

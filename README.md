@@ -38,8 +38,11 @@ right-click the app and choose **Open** the first time.
   paint the hours of the week it should switch on by itself.
 - **Locks**: what it takes to stop a block early.
   - *No lock*: stop any time.
-  - *Random words*: type out a chain of N random words by hand (for example "acorn pluck tidy
-    gecko…"). Pasting is blocked, and a new chain appears after every wrong try.
+  - *Random words*: type out a chain of N random words (for example "acorn pluck tidy gecko…"),
+    one at a time, like a typing race. Each word turns green as it's typed correctly and
+    locks in with Space; a mistake shows in red and can't be locked in. The block stops by
+    itself after the last word. Progress is kept if you close the window, and pasting is
+    blocked.
   - *Password*: have someone else set it. Stored as a salted scrypt hash.
   - *Locked*: no way out until time runs out.
   While a block is locked you can **add** sites, programs and hours, but you can't remove them,

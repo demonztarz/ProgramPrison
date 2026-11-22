@@ -31,6 +31,8 @@ pub enum Request {
     Quit,
     /// A second settings window was opened: bring the existing one to the front instead.
     ShowWindow,
+    /// Random-words lock: this many words of the current chain are typed and locked in.
+    WordProgress { id: String, done: usize },
     /// Tests only: positions of cover windows.
     Covers,
 }
@@ -74,7 +76,12 @@ pub enum Challenge {
     None,
     Locked { until: Option<i64> },
     Password,
-    Random { text: String },
+    /// `done`: words already typed and locked in (kept by the blocker, so it survives closing the window).
+    Random {
+        text: String,
+        #[serde(default)]
+        done: usize,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -146,42 +146,67 @@ fn run(hosts: &std::path::Path) {
     }
     assert!(h.query_by_label_contains("Locked. You can add").is_some(), "locked banner shown");
 
-    eprintln!("• the stop dialog: pasting is refused, a wrong text is refused, the right text stops it");
+    eprintln!("• the stop dialog: typing-race style, words lock in one at a time");
     h.get_by_label("Stop").click();
     h.run_steps(3);
     assert!(h.query_by_label_contains("type these 30 words").is_some());
-    // Paste goes nowhere.
-    h.get_by_label("Unlock text").focus();
-    h.run_steps(1);
-    h.event(egui::Event::Paste("acorn pluck tidy".into()));
-    h.run_steps(2);
-    assert_eq!(h.get_by_label("Unlock text").value().unwrap_or_default(), "", "paste ignored");
-    h.get_by_label("Unlock text").type_text("wrongwrongwrongwrong");
-    h.run_steps(1);
-    h.get_by_label("Stop block").click();
-    h.run_steps(3);
-    assert!(h.query_by_label_contains("don't match").is_some(), "mismatch error shown");
-    assert!(h.state().block().unwrap().status.active, "still on");
-    // The new word chain is the label made of 30 lowercase words.
-    let challenge: String = h
+    assert!(h.query_by_label("Stop block").is_none(), "no Stop block button: it finishes by itself");
+    assert!(h.query_by_label("Close").is_some(), "the dialog can still be closed");
+    let words: Vec<String> = h
         .get_all_by_role(egui::accesskit::Role::Label)
         .filter_map(|n| n.accesskit_node().value())
         .map(|v| v.to_string())
         .find(|t| t.split(' ').count() == 30 && t.chars().all(|c| c.is_ascii_lowercase() || c == ' '))
-        .expect("word chain on screen");
-    // Typed in capitals with extra spaces: still accepted.
-    let challenge = challenge.to_uppercase().replace(' ', "   ");
-    h.get_by_label("Unlock text").focus();
-    h.run_steps(1);
-    h.get_by_label("Unlock text").type_text(&challenge);
-    h.run_steps(4); // the box grows and moves the button down: let the layout settle first
-    let typed = h.get_by_label("Unlock text").value().unwrap_or_default();
-    h.get_by_label("Stop block").click();
-    h.run_steps(3);
-    if h.state().block().unwrap().status.active {
-        let labels: Vec<String> = h.get_all_by_role(egui::accesskit::Role::Label).filter_map(|n| n.accesskit_node().value().map(|v| v.to_string())).collect();
-        panic!("not stopped; typed {typed:?}; labels {labels:#?}");
+        .expect("word chain on screen")
+        .split(' ')
+        .map(String::from)
+        .collect();
+    let progress = |h: &Harness<'static, PrisonApp>| h.query_by_label_contains(" / 30 words").map(|n| n.accesskit_node().value().unwrap_or_default().to_string()).unwrap_or_default();
+    let box_value = |h: &Harness<'static, PrisonApp>| h.get_by_label("Unlock text").value().unwrap_or_default().to_string();
+    let type_in = |h: &mut Harness<'static, PrisonApp>, t: &str| {
+        h.get_by_label("Unlock text").type_text(t);
+        h.run_steps(3);
+    };
+
+    // Paste goes nowhere.
+    h.event(egui::Event::Paste(words[..3].join(" ")));
+    h.run_steps(2);
+    assert_eq!(box_value(&h), "", "paste ignored");
+
+    // A wrong word can't be locked in: it stays in the box, progress doesn't move.
+    type_in(&mut h, "zzzz ");
+    assert_eq!(progress(&h), "0 / 30 words");
+    assert_eq!(box_value(&h), "zzzz", "wrong word kept so it can be fixed");
+    for _ in 0..4 {
+        h.key_press(egui::Key::Backspace);
+        h.run_steps(1);
     }
+    assert_eq!(box_value(&h), "");
+
+    // Right words lock in one by one; capitals don't matter.
+    for w in &words[..3] {
+        type_in(&mut h, &format!("{} ", w.to_uppercase()));
+    }
+    assert_eq!(progress(&h), "3 / 30 words");
+    assert_eq!(box_value(&h), "", "the box clears after each word");
+
+    // Closing keeps the progress: reopening carries on from word 4 with the same words.
+    h.get_by_label("Close").click();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains(" / 30 words").is_none(), "dialog closed");
+    h.get_by_label("Stop").click();
+    h.run_steps(3);
+    assert_eq!(progress(&h), "3 / 30 words", "progress kept after closing");
+
+    // The rest, then the last word with no space: the block stops by itself.
+    for w in &words[3..29] {
+        type_in(&mut h, &format!("{w} "));
+    }
+    assert_eq!(progress(&h), "29 / 30 words");
+    type_in(&mut h, &words[29]);
+    h.run_steps(3);
+    assert!(!h.state().block().unwrap().status.active, "stopped after the last word");
+    assert!(h.query_by_label_contains(" / 30 words").is_none(), "dialog gone");
 
     eprintln!("• schedule tab renders and the preset adds hours");
     h.get_by_label_contains("Schedule").click();

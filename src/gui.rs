@@ -30,6 +30,8 @@ struct StopDialog {
     challenge: Challenge,
     answer: String,
     error: String,
+    /// Random words: how many words are locked in so far.
+    done: usize,
 }
 
 struct LockForm {
@@ -299,7 +301,12 @@ impl PrisonApp {
         let Some(id) = self.selected.clone() else { return };
         if let Some(c) = self.send(Request::Challenge { id }).challenge {
             let error = self.stop.take().map(|s| s.error).unwrap_or_default();
-            self.stop = Some(StopDialog { challenge: c, answer: String::new(), error });
+            // The blocker remembers the words already locked in: carry on from there.
+            let done = match &c {
+                Challenge::Random { done, .. } => *done,
+                _ => 0,
+            };
+            self.stop = Some(StopDialog { challenge: c, answer: String::new(), error, done });
         }
     }
 
@@ -321,7 +328,7 @@ impl PrisonApp {
                 d.answer.clear();
             }
             if random {
-                self.open_stop(); // a new text after every wrong try
+                self.open_stop(); // the blocker hands out a new chain after a failed try
             }
         }
     }
@@ -973,6 +980,7 @@ impl PrisonApp {
         if self.stop.is_some() {
             let mut close = false;
             let mut submit = false;
+            let mut progress = None;
             // No pasting the unlock text.
             if matches!(self.stop.as_ref().unwrap().challenge, Challenge::Random { .. }) {
                 ctx.input_mut(|i| i.events.retain(|e| !matches!(e, Event::Paste(_) | Event::Copy | Event::Cut)));
@@ -1000,33 +1008,67 @@ impl PrisonApp {
                         named(&r, "Unlock password");
                         submit |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     }
-                    Challenge::Random { text } => {
-                        let total = text.split_whitespace().count();
-                        ui.label(format!("To stop early, type these {total} words in order. Capital letters and extra spaces don't matter."));
-                        let spaced = text.clone();
-                        egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(CornerRadius::same(8)).inner_margin(10).show(ui, |ui| {
+                    Challenge::Random { text, .. } => {
+                        // Typed like a typing race: one word at a time; each word turns green
+                        // once it's right and Space locks it in. A wrong word can't be locked in.
+                        let words: Vec<&str> = text.split_whitespace().collect();
+                        let total = words.len();
+                        can_submit = false; // finishes by itself after the last word
+                        ui.label(format!("To stop early, type these {total} words. Press Space after each word to lock it in. Capital letters don't matter."));
+                        let job = word_chain(ui, &words, d.done, &d.answer);
+                        egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(CornerRadius::same(8)).inner_margin(12).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-                                ui.add(egui::Label::new(RichText::new(spaced).size(16.0)).selectable(false).wrap());
+                            egui::ScrollArea::vertical().max_height(170.0).show(ui, |ui| {
+                                ui.add(egui::Label::new(job).selectable(false).wrap());
                             });
                         });
-                        let r = ui.add(egui::TextEdit::multiline(&mut d.answer).font(egui::FontId::proportional(16.0)).desired_rows(4).desired_width(f32::INFINITY).hint_text("Type the words above").id_salt("answer"));
+                        let current = words.get(d.done).copied().unwrap_or("");
+                        let typed = d.answer.trim_start().to_ascii_lowercase();
+                        let wrong = !typed.trim_end().is_empty() && !current.starts_with(typed.trim_end());
+                        let mut edit = egui::TextEdit::singleline(&mut d.answer)
+                            .font(egui::FontId::proportional(18.0))
+                            .desired_width(f32::INFINITY)
+                            .hint_text("Type the highlighted word")
+                            .id_salt("answer");
+                        if wrong {
+                            edit = edit.background_color(DANGER.gamma_multiply(0.45));
+                        }
+                        let r = ui.add(edit);
                         named(&r, "Unlock text");
-                        let typed = d.answer.split_whitespace().count();
-                        ui.label(RichText::new(format!("{typed} / {total} words")).small().color(muted(ui)));
+                        if !r.has_focus() && d.done < total {
+                            r.request_focus();
+                        }
+                        if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            d.answer.push(' '); // Enter locks a word in too
+                        }
+                        let before = d.done;
+                        lock_in_words(&words, &mut d.done, &mut d.answer);
+                        if d.done != before && d.done < total {
+                            progress = Some(d.done);
+                        }
+                        if d.done >= total {
+                            d.answer = text.clone();
+                            submit = true;
+                        }
+                        ui.label(RichText::new(format!("{} / {total} words", d.done.min(total))).small().color(muted(ui)));
                     }
                 }
                 if !d.error.is_empty() {
                     ui.colored_label(DANGER, &d.error);
                 }
                 ui.add_space(8.0);
+                let words_lock = matches!(d.challenge, Challenge::Random { .. });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if can_submit {
                         submit |= ui.add(egui::Button::new(RichText::new("Stop block").color(Color32::WHITE)).fill(DANGER)).clicked();
                     }
-                    close = ui.button(if can_submit { "Cancel" } else { "OK" }).clicked();
+                    close = ui.button(if can_submit { "Cancel" } else if words_lock { "Close" } else { "OK" }).clicked();
                 });
             });
+            // Tell the blocker about newly locked-in words, so closing the window keeps them.
+            if let (Some(done), Some(id)) = (progress, self.selected.clone()) {
+                let _ = (self.conn)(&Request::WordProgress { id, done });
+            }
             if close {
                 self.stop = None;
             } else if submit {
@@ -1172,6 +1214,73 @@ impl PrisonApp {
 }
 
 // ---------- small widgets ----------
+
+/// Moves finished words out of the typing box: every word followed by a space that matches
+/// the next word in the chain is locked in. A wrong word stays in the box to be fixed. The
+/// last word needs no space.
+fn lock_in_words(words: &[&str], done: &mut usize, answer: &mut String) {
+    loop {
+        let Some(current) = words.get(*done) else { return };
+        let rest = answer.trim_start();
+        match rest.find(char::is_whitespace) {
+            Some(i) if rest[..i].eq_ignore_ascii_case(current) => {
+                *done += 1;
+                *answer = rest[i..].trim_start().to_string();
+            }
+            Some(i) => {
+                *answer = rest[..i].to_string(); // wrong word: keep it so it can be corrected
+                return;
+            }
+            None => {
+                if *done + 1 == words.len() && rest.eq_ignore_ascii_case(current) {
+                    *done += 1;
+                    answer.clear();
+                }
+                return;
+            }
+        }
+    }
+}
+
+/// The word chain, coloured as you type: finished words green, the current word underlined
+/// with its correct letters green and the first wrong letter in red, the rest plain.
+fn word_chain(ui: &egui::Ui, words: &[&str], done: usize, typed: &str) -> egui::text::LayoutJob {
+    use egui::text::{LayoutJob, TextFormat};
+    let dark = ui.visuals().dark_mode;
+    let green = if dark { Color32::from_rgb(0x5f, 0xd0, 0x8a) } else { Color32::from_rgb(0x1f, 0x8a, 0x4c) };
+    let plain = ui.visuals().text_color();
+    let font = egui::FontId::proportional(18.0);
+    let fmt = |color: Color32, background: Color32, underline: bool| TextFormat {
+        font_id: font.clone(),
+        color,
+        background,
+        underline: if underline { Stroke::new(1.5, color) } else { Stroke::NONE },
+        ..Default::default()
+    };
+    let mut job = LayoutJob::default();
+    let typed = typed.trim_start().to_ascii_lowercase();
+    let typed = typed.trim_end();
+    for (i, w) in words.iter().enumerate() {
+        if i < done {
+            job.append(w, 0.0, fmt(green, Color32::TRANSPARENT, false));
+        } else if i == done {
+            let ok = w.bytes().zip(typed.bytes()).take_while(|(a, b)| a == b).count();
+            job.append(&w[..ok], 0.0, fmt(green, Color32::TRANSPARENT, true));
+            if typed.len() > ok && ok < w.len() {
+                job.append(&w[ok..ok + 1], 0.0, fmt(Color32::WHITE, DANGER, true));
+                job.append(&w[ok + 1..], 0.0, fmt(plain, Color32::TRANSPARENT, true));
+            } else {
+                job.append(&w[ok..], 0.0, fmt(plain, Color32::TRANSPARENT, true));
+            }
+        } else {
+            job.append(w, 0.0, fmt(plain, Color32::TRANSPARENT, false));
+        }
+        if i + 1 < words.len() {
+            job.append(" ", 0.0, fmt(plain, Color32::TRANSPARENT, false));
+        }
+    }
+    job
+}
 
 /// Gives a text box an accessible name (read by screen readers, and used by the tests).
 fn named(r: &egui::Response, name: &str) {

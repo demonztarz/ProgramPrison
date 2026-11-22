@@ -182,15 +182,20 @@ fn run(env: &Env, svc: &mut Child) {
     assert!(!call(Request::DeleteBlock { id: id.clone() }).ok);
     assert!(!call(Request::SetLock { id: id.clone(), lock: LockRequest { kind: "none".into(), length: 0, password: String::new() } }).ok);
     assert!(!call(Request::Quit).ok, "quitting refused while locked");
-    let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!("expected a random-text challenge") };
+    let Some(Challenge::Random { text, .. }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!("expected a random-text challenge") };
+    // Asking again gives the same chain, with the typing progress the window saved.
+    ok(Request::WordProgress { id: id.clone(), done: 7 });
+    let Some(Challenge::Random { text: again, done }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
+    assert_eq!(again, text, "same chain until it's typed");
+    assert_eq!(done, 7, "progress kept");
     assert_eq!(text.split(' ').count(), 20, "20 words");
     let r = call(Request::StopBlock { id: id.clone(), answer: "wrong".into() });
     assert!(!r.ok && r.error.unwrap().contains("don't match"));
-    let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
+    let Some(Challenge::Random { text, .. }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
     // Missing a word is refused; capitals and extra spaces are fine.
     let short: Vec<&str> = text.split(' ').skip(1).collect();
     assert!(!call(Request::StopBlock { id: id.clone(), answer: short.join(" ") }).ok);
-    let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
+    let Some(Challenge::Random { text, .. }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
     ok(Request::StopBlock { id: id.clone(), answer: text.to_uppercase().replace(' ', "  \n ") });
     assert!(!state().blocks[0].status.active);
     wait_for("hosts section removed", 5, || !env.hosts().contains("reddit"));
@@ -206,7 +211,7 @@ fn run(env: &Env, svc: &mut Child) {
     sched.iter_mut().for_each(|v| *v = false);
     let r = call(Request::UpdateBlock { id: id.clone(), edit: Edit { schedule: Some(sched.clone()), ..Default::default() } });
     assert!(!r.ok, "random lock: scheduled hours can't be removed while on");
-    let Some(Challenge::Random { text }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
+    let Some(Challenge::Random { text, .. }) = ok(Request::Challenge { id: id.clone() }).challenge else { panic!() };
     ok(Request::StopBlock { id: id.clone(), answer: text });
     assert!(state().blocks[0].status.unlocked_until.is_some(), "skipping the scheduled run");
     ok(Request::UpdateBlock { id: id.clone(), edit: Edit { schedule: Some(sched), ..Default::default() } });

@@ -15,7 +15,8 @@ pub struct Service {
     hosts_status: HostsStatus,
     last_domains: Option<Vec<String>>,
     last_hosts_check: Option<Instant>,
-    challenges: HashMap<String, String>,
+    /// Random-words lock: block id -> (word chain, words typed so far).
+    challenges: HashMap<String, (String, usize)>,
     pub cover_supported: bool,
     presence: crate::discord::Presence,
     last_wall: i64,
@@ -199,6 +200,12 @@ impl Service {
             Request::GetState => return (Response { ok: true, state: Some(self.public_state()), ..Default::default() }, false),
             Request::RunningApps => return (Response { ok: true, apps: Some(procs::running_names()), ..Default::default() }, false),
             Request::Covers => return (Response::ok(), false), // answered by the platform loop
+            Request::WordProgress { id, done } => {
+                if let Some(c) = self.challenges.get_mut(&id) {
+                    c.1 = done.min(c.0.split_whitespace().count());
+                }
+                return (Response::ok(), false);
+            }
             Request::ShowWindow => {
                 self.show_requests += 1;
                 return (Response::ok(), false);
@@ -264,16 +271,17 @@ impl Service {
                         engine::Lock::Locked => Challenge::Locked { until: b.active_until(now).filter(|&t| t != i64::MAX) },
                         engine::Lock::Password { .. } => Challenge::Password,
                         engine::Lock::Random { length } => {
-                            let text = engine::random_words(*length as usize);
-                            self.challenges.insert(id.clone(), text.clone());
-                            Challenge::Random { text }
+                            // The same chain until it's typed, so progress survives closing the window.
+                            let n = *length as usize;
+                            let (text, done) = self.challenges.entry(id.clone()).or_insert_with(|| (engine::random_words(n), 0)).clone();
+                            Challenge::Random { text, done }
                         }
                     }
                 };
                 return (Response { ok: true, challenge: Some(c), ..Default::default() }, false);
             }
             Request::StopBlock { id, answer } => {
-                let want = self.challenges.get(&id).cloned();
+                let want = self.challenges.get(&id).map(|c| c.0.clone());
                 match self.block_mut(&id) {
                     None => self.fail(gone),
                     Some(b) => {
@@ -289,7 +297,10 @@ impl Service {
                             None
                         };
                         match err {
-                            Some(e) => self.fail(e),
+                            Some(e) => {
+                                self.challenges.remove(&id); // a failed try gets a new chain
+                                self.fail(e)
+                            }
                             None => {
                                 b.stop(now);
                                 self.challenges.remove(&id);
