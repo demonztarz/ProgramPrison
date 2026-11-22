@@ -1,13 +1,13 @@
 PROGRAMPRISON - how to use it
 =============================
 
-ProgramPrison blocks distracting websites and programs on a timer or a weekly
+Program Prison blocks distracting websites and programs on a timer or a weekly
 schedule, and can lock itself so you can't back out halfway.
 
 
 GETTING STARTED
 ---------------
-1. Move ProgramPrison.exe somewhere permanent, for example Documents\ProgramPrison.
+1. Move Program Prison.exe somewhere permanent, for example Documents\Program Prison.
    It starts itself at login from wherever it is, so don't leave it in Downloads.
 2. Double-click it. If Windows SmartScreen warns you, click "More info" and then
    "Run anyway". That only happens the first time.
@@ -66,32 +66,32 @@ On the Lock tab choose what it takes to stop early, then click "Save lock":
   Locked       - no way to stop it; you wait until it ends
 
 While a block is locked you can still ADD websites, programs or hours, but you
-can't remove anything, delete the block or quit ProgramPrison. Restarting the
+can't remove anything, delete the block or quit Program Prison. Restarting the
 computer doesn't help: it starts again and carries on where it left off.
 
 
 EVERYDAY USE
 ------------
-  - Closing the window does NOT stop blocking; ProgramPrison keeps running in
+  - Closing the window does NOT stop blocking; Program Prison keeps running in
     the tray.
   - Open the window again: left-click the tray icon, or run the program again.
-  - Right-click the tray icon for "Open ProgramPrison" or "Quit" (Quit is greyed
+  - Right-click the tray icon for "Open Program Prison" or "Quit" (Quit is greyed
     out while a block is locked).
   - Settings (bottom of the sidebar):
-      "Start ProgramPrison when I log in" - leave this on
-      "Quit ProgramPrison"                - shut it down completely
+      "Start Program Prison when I log in" - leave this on
+      "Quit Program Prison"                - shut it down completely
 
 
 EMERGENCY EXIT
 --------------
-If you really need out, open Task Manager (Ctrl+Shift+Esc), find ProgramPrison
+If you really need out, open Task Manager (Ctrl+Shift+Esc), find Program Prison
 and click "End task". Nothing restarts it until you next log in.
 
   - Programs are allowed again straight away. Covered programs stay open and
     their covers disappear.
   - Websites stay blocked until the block's time is up.
   - To stop it starting at your next login: Task Manager > Startup apps >
-    disable ProgramPrison.
+    disable Program Prison.
 
 
 GOOD TO KNOW

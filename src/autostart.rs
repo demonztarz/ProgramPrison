@@ -63,7 +63,7 @@ mod imp {
         let file = dir.join("programprison.desktop");
         if on {
             let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::write(&file, format!("[Desktop Entry]\nType=Application\nName=ProgramPrison\nExec=\"{exe}\" --service\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"));
+            let _ = std::fs::write(&file, format!("[Desktop Entry]\nType=Application\nName=Program Prison\nExec=\"{exe}\" --service\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"));
         } else {
             let _ = std::fs::remove_file(&file);
         }

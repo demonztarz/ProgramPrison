@@ -31,7 +31,7 @@ Notes for whoever builds it:
 
 ## Ideas
 
-- Tray icon on macOS and Linux (today you reopen ProgramPrison from your apps).
+- Tray icon on macOS and Linux (today you reopen Program Prison from your apps).
 - Code-signed builds, so Windows SmartScreen and macOS don't warn on first run.
 - Covering windows on macOS (today "cover" falls back to closing there).
 - A friendlier "blocked" page in the browser instead of a connection error.

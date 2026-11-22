@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Program Prison</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e26c2e"/>
+      <stop offset="1" stop-color="#c4501f"/>
+    </linearGradient>
+  </defs>
+  <rect x="41" y="41" width="942" height="942" rx="205" fill="url(#tile)"/>
+  <g fill="#fff7ee">
+    <rect x="225" y="246" width="574" height="62"/>
+    <rect x="225" y="717" width="574" height="62"/>
+    <rect x="279.5" y="246" width="65.5" height="533"/>
+    <rect x="412.5" y="246" width="65.5" height="533"/>
+    <rect x="546" y="246" width="65.5" height="533"/>
+    <rect x="679" y="246" width="65.5" height="533"/>
+  </g>
+</svg>

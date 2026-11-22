@@ -17,6 +17,7 @@ pub struct Service {
     last_hosts_check: Option<Instant>,
     challenges: HashMap<String, String>,
     pub cover_supported: bool,
+    presence: crate::discord::Presence,
     last_wall: i64,
     last_mono: i64,
     pub asleep: bool,
@@ -45,6 +46,7 @@ impl Service {
             last_domains: None,
             last_hosts_check: None,
             challenges: HashMap::new(),
+            presence: crate::discord::Presence::start(),
             cover_supported,
             last_wall: engine::now_ms(),
             last_mono: mono_ms(),
@@ -116,6 +118,15 @@ impl Service {
             };
             self.last_domains = if ok { Some(domains) } else { None };
         }
+        let shown = if self.state.settings.discord {
+            let blocks: Vec<(String, bool, Option<i64>)> =
+                active.iter().map(|b| (b.name.clone(), b.is_locked(now), b.active_until(now).filter(|&t| t != i64::MAX))).collect();
+            let sites = active.iter().map(|b| b.sites.len()).sum();
+            let progs = active.iter().map(|b| b.apps.len()).sum();
+            crate::discord::activity(&blocks, sites, progs)
+        } else {
+            None
+        };
         let apps = engine::blocked_apps(active.iter().copied(), self.cover_supported);
         let labels = apps
             .cover
@@ -126,6 +137,7 @@ impl Service {
                 (name.clone(), b.map(|b| b.name.clone()).unwrap_or_default(), until)
             })
             .collect();
+        self.presence.set(shown);
         AppWork { apps, labels }
     }
 
@@ -160,6 +172,7 @@ impl Service {
             cover_supported: self.cover_supported,
             version: env!("CARGO_PKG_VERSION").into(),
             show_requests: self.show_requests,
+            discord_status: if self.state.settings.discord { self.presence.status() } else { "Off.".into() },
         }
     }
 
@@ -286,12 +299,17 @@ impl Service {
                     }
                 }
             }
-            Request::UpdateSettings { start_at_login } => {
-                if !start_at_login && self.any_locked() {
+            Request::UpdateSettings { start_at_login, discord } => {
+                if start_at_login == Some(false) && self.any_locked() {
                     self.fail("Start at login can't be turned off while a locked block is running.")
                 } else {
-                    self.state.settings.start_at_login = start_at_login;
-                    crate::autostart::apply(start_at_login);
+                    if let Some(on) = start_at_login {
+                        self.state.settings.start_at_login = on;
+                        crate::autostart::apply(on);
+                    }
+                    if let Some(on) = discord {
+                        self.state.settings.discord = on;
+                    }
                     self.changed()
                 }
             }
@@ -308,7 +326,7 @@ impl Service {
             }
             Request::Quit => {
                 if self.any_locked() {
-                    self.fail("A locked block is running, so ProgramPrison can't be closed until it ends.")
+                    self.fail("A locked block is running, so Program Prison can't be closed until it ends.")
                 } else {
                     self.quit_requested = true;
                     Response::ok()

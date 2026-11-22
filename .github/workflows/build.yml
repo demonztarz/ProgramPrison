@@ -65,7 +65,7 @@ jobs:
         run: |
           cargo build --release
           New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item target\release\programprison.exe "out\ProgramPrison-$env:VERSION-windows-x64.exe"
+          Copy-Item target\release\programprison.exe "out\Program Prison.exe"
           Copy-Item assets\README.txt "out\README.txt"
           $json = Join-Path $env:RUNNER_TEMP "selftest.json"
           Start-Process -FilePath target\release\programprison.exe -ArgumentList "--self-test=$json" -Wait
@@ -87,21 +87,21 @@ jobs:
         run: |
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
-          APP=out/ProgramPrison.app
-          mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
-          lipo -create -output $APP/Contents/MacOS/programprison target/aarch64-apple-darwin/release/programprison target/x86_64-apple-darwin/release/programprison
+          APP="out/Program Prison.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          lipo -create -output "$APP/Contents/MacOS/programprison" target/aarch64-apple-darwin/release/programprison target/x86_64-apple-darwin/release/programprison
           mkdir icon.iconset
           for s in 16 32 128 256; do
             sips -z $s $s assets/icon-256.png --out icon.iconset/icon_${s}x${s}.png >/dev/null
             sips -z $((s*2)) $((s*2)) assets/icon-256.png --out icon.iconset/icon_${s}x${s}@2x.png >/dev/null
           done
-          iconutil -c icns icon.iconset -o $APP/Contents/Resources/ProgramPrison.icns
-          cat > $APP/Contents/Info.plist <<EOF
+          iconutil -c icns icon.iconset -o "$APP/Contents/Resources/ProgramPrison.icns"
+          cat > "$APP/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
-          <key>CFBundleName</key><string>ProgramPrison</string>
-          <key>CFBundleDisplayName</key><string>ProgramPrison</string>
+          <key>CFBundleName</key><string>Program Prison</string>
+          <key>CFBundleDisplayName</key><string>Program Prison</string>
           <key>CFBundleIdentifier</key><string>app.programprison</string>
           <key>CFBundleVersion</key><string>$VERSION</string>
           <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -112,23 +112,23 @@ jobs:
           <key>LSMinimumSystemVersion</key><string>11.0</string>
           </dict></plist>
           EOF
-          $APP/Contents/MacOS/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
+          "$APP/Contents/MacOS/programprison" --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
           cp assets/README.txt out/README.txt
-          cd out && ditto -c -k --keepParent ProgramPrison.app "ProgramPrison-$VERSION-macos.zip" && rm -rf ProgramPrison.app
+          cd out && ditto -c -k --keepParent "Program Prison.app" "Program Prison $VERSION (macOS).zip" && rm -rf "Program Prison.app"
 
       - name: Build (Linux)
         if: matrix.name == 'linux'
         run: |
           cargo build --release
           ./target/release/programprison --self-test=selftest.json && cat selftest.json && grep -q '"ok": true' selftest.json
-          mkdir -p out/ProgramPrison
-          cp target/release/programprison assets/README.txt assets/icon-256.png out/ProgramPrison/
-          tar -C out -czf "out/ProgramPrison-$VERSION-linux-x64.tar.gz" ProgramPrison
-          rm -rf out/ProgramPrison
+          mkdir -p "out/Program Prison"
+          cp target/release/programprison assets/README.txt assets/icon-256.png "out/Program Prison/"
+          tar -C out -czf "out/program-prison-$VERSION-linux-x64.tar.gz" "Program Prison"
+          rm -rf "out/Program Prison"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ProgramPrison-${{ matrix.name }}
+          name: Program Prison - ${{ matrix.name }}
           path: out/*
           if-no-files-found: error
 

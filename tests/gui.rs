@@ -192,9 +192,9 @@ fn run(hosts: &std::path::Path) {
     eprintln!("• settings open and close");
     h.get_by_label("Settings").click();
     h.run_steps(3);
-    assert!(h.query_by_label("Start ProgramPrison when I log in").is_some());
+    assert!(h.query_by_label("Start Program Prison when I log in").is_some());
     h.get_by_label("Done").click();
     h.run_steps(3);
-    assert!(h.query_by_label("Start ProgramPrison when I log in").is_none());
+    assert!(h.query_by_label("Start Program Prison when I log in").is_none());
     eprintln!("all window checks passed");
 }

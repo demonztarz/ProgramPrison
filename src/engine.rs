@@ -111,11 +111,18 @@ mod schedule_bits {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub start_at_login: bool,
+    /// Show running blocks as a Discord status.
+    #[serde(default = "yes")]
+    pub discord: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { start_at_login: true }
+        Settings { start_at_login: true, discord: true }
     }
 }
 
@@ -494,7 +501,7 @@ pub fn app_key(name: &str) -> String {
 }
 
 pub fn is_protected(key: &str) -> bool {
-    PROTECTED.contains(&key) || key.starts_with("programprison")
+    PROTECTED.contains(&key) || key.replace([' ', '-', '_'], "").starts_with("programprison")
 }
 
 pub fn normalize_app(input: &str) -> Result<String, String> {
@@ -506,7 +513,7 @@ pub fn normalize_app(input: &str) -> Result<String, String> {
         return Err("That program name is too long.".into());
     }
     if is_protected(&key) {
-        return Err(format!("“{key}” is part of the system or of ProgramPrison and can't be blocked."));
+        return Err(format!("“{key}” is part of the system or of Program Prison and can't be blocked."));
     }
     Ok(key)
 }

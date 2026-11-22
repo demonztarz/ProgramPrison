@@ -1,4 +1,5 @@
 pub mod autostart;
+pub mod discord;
 pub mod engine;
 pub mod gui;
 pub mod hosts;

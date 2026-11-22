@@ -20,7 +20,12 @@ pub enum Request {
     SetLock { id: String, lock: LockRequest },
     Challenge { id: String },
     StopBlock { id: String, answer: String },
-    UpdateSettings { start_at_login: bool },
+    UpdateSettings {
+        #[serde(default)]
+        start_at_login: Option<bool>,
+        #[serde(default)]
+        discord: Option<bool>,
+    },
     SetupHosts,
     RunningApps,
     Quit,
@@ -59,6 +64,8 @@ pub struct PublicState {
     pub version: String,
     /// Goes up each time the settings window should come to the front.
     pub show_requests: u32,
+    /// What the Discord status is doing ("Connected to Discord as …", "Discord isn't running…").
+    pub discord_status: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

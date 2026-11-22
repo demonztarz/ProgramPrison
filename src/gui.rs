@@ -433,7 +433,7 @@ impl PrisonApp {
                     self.toast(r.error.unwrap_or_default(), true)
                 }
             }
-        // Someone opened ProgramPrison again (or clicked the tray icon): come to the front.
+        // Someone opened Program Prison again (or clicked the tray icon): come to the front.
         if let Some(n) = self.state.as_ref().map(|s| s.show_requests) {
             if self.shown_requests.is_some_and(|seen| n > seen) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -460,7 +460,7 @@ impl PrisonApp {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
             paint_logo(ui.painter(), r);
-            ui.label(RichText::new("ProgramPrison").strong().size(17.0));
+            ui.label(RichText::new("Program Prison").strong().size(17.0));
         });
         ui.add_space(14.0);
         ui.label(RichText::new("BLOCKS").small().color(muted(ui)));
@@ -509,7 +509,7 @@ impl PrisonApp {
 
     fn main(&mut self, ui: &mut egui::Ui) {
         if let Some(e) = &self.offline {
-            banner(ui, DANGER, &format!("Can't reach the ProgramPrison blocker ({e}). Restart ProgramPrison."));
+            banner(ui, DANGER, &format!("Can't reach the Program Prison blocker ({e}). Restart Program Prison."));
         }
         let Some(state) = self.state.clone() else { return };
         let needs_sites = state.blocks.iter().any(|b| !b.sites.is_empty());
@@ -842,7 +842,7 @@ impl PrisonApp {
             ("none", "No lock", "Stop whenever you like."),
             ("random", "Random words", "To stop early, type out a chain of random words by hand. Copy and paste are switched off."),
             ("password", "Password", "Ask someone you trust to type a password you don't know."),
-            ("locked", "Locked", "No way out until time runs out. You can't stop it, quit ProgramPrison, delete the block or remove anything from it."),
+            ("locked", "Locked", "No way out until time runs out. You can't stop it, quit Program Prison, delete the block or remove anything from it."),
         ];
         for (kind, title, desc) in options {
             let enabled = !locked || kind == "locked" || kind == b.lock;
@@ -1090,22 +1090,33 @@ impl PrisonApp {
             let mut setup = false;
             let mut quit = false;
             let mut login_change = None;
+            let mut discord_change = None;
             let busy = self.setup.is_some();
             Modal::new(Id::unique("settings")).show(ctx, |ui| {
                 ui.set_width(440.0);
                 ui.heading("Settings");
                 ui.add_space(10.0);
                 let mut login = state.settings.start_at_login;
-                if ui.checkbox(&mut login, "Start ProgramPrison when I log in").changed() {
+                if ui.checkbox(&mut login, "Start Program Prison when I log in").changed() {
                     login_change = Some(login);
                 }
                 ui.label(RichText::new("Keep this on so blocks still apply after a restart.").small().color(muted(ui)));
                 ui.add_space(12.0);
+                ui.label(RichText::new("Discord").strong());
+                let mut discord = state.settings.discord;
+                if ui.checkbox(&mut discord, "Show my blocks on Discord").changed() {
+                    discord_change = Some(discord);
+                }
+                ui.label(RichText::new("While a block is on, your Discord friends see “Playing Program Prison” with the block's name and time left.").small().color(muted(ui)));
+                if state.settings.discord {
+                    ui.label(RichText::new(&state.discord_status).small());
+                }
+                ui.add_space(12.0);
                 ui.label(RichText::new("Website blocking").strong());
                 if state.hosts.writable {
-                    ui.label(format!("Ready. ProgramPrison can edit {}.", state.hosts.path));
+                    ui.label(format!("Ready. Program Prison can edit {}.", state.hosts.path));
                 } else {
-                    ui.label(format!("Not set up. ProgramPrison needs permission to edit {}. You'll be asked for an administrator password once.", state.hosts.path));
+                    ui.label(format!("Not set up. Program Prison needs permission to edit {}. You'll be asked for an administrator password once.", state.hosts.path));
                     if busy {
                         ui.horizontal(|ui| {
                             ui.spinner();
@@ -1117,16 +1128,19 @@ impl PrisonApp {
                 }
                 ui.add_space(12.0);
                 ui.label(RichText::new("Background blocker").strong());
-                ui.label(RichText::new("Closing this window keeps blocks running. To stop ProgramPrison completely:").color(muted(ui)));
-                quit = ui.button("Quit ProgramPrison").clicked();
+                ui.label(RichText::new("Closing this window keeps blocks running. To stop Program Prison completely:").color(muted(ui)));
+                quit = ui.button("Quit Program Prison").clicked();
                 ui.add_space(10.0);
-                ui.label(RichText::new(format!("ProgramPrison {}", state.version)).small().color(muted(ui)));
+                ui.label(RichText::new(format!("Program Prison {}", state.version)).small().color(muted(ui)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     close = ui.add(primary("Done")).clicked();
                 });
             });
             if let Some(v) = login_change {
-                self.send(Request::UpdateSettings { start_at_login: v });
+                self.send(Request::UpdateSettings { start_at_login: Some(v), discord: None });
+            }
+            if let Some(v) = discord_change {
+                self.send(Request::UpdateSettings { start_at_login: None, discord: Some(v) });
             }
             if setup {
                 self.start_setup(ctx);
@@ -1364,7 +1378,7 @@ pub fn run(smoke_out: Option<String>) {
     let options = eframe::NativeOptions {
         renderer,
         viewport: egui::ViewportBuilder::default()
-            .with_title("ProgramPrison")
+            .with_title("Program Prison")
             .with_app_id("programprison")
             .with_inner_size([1040.0, 720.0])
             .with_min_inner_size([760.0, 540.0])

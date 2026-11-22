@@ -72,7 +72,7 @@ fn user_name() -> String {
 }
 
 /// One-time step: asks for the administrator password once so this user may edit the hosts
-/// file from then on, and ProgramPrison never has to run as administrator.
+/// file from then on, and Program Prison never has to run as administrator.
 pub fn grant_access() -> Result<(), String> {
     let path = hosts_path();
     let p = path.display().to_string();

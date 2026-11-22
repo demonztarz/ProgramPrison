@@ -86,7 +86,7 @@ fn step(name: &str) {
     eprintln!("• {name}");
 }
 
-/// A long-running program with a chosen name that ProgramPrison should block.
+/// A long-running program with a chosen name that Program Prison should block.
 fn start_program(dir: &Path) -> (Child, &'static str) {
     if cfg!(windows) {
         (Command::new("notepad.exe").spawn().unwrap(), "notepad")
@@ -226,7 +226,7 @@ fn run(env: &Env, svc: &mut Child) {
     assert!(!call(Request::StopBlock { id: id.clone(), answer: String::new() }).ok);
     assert!(!call(Request::DeleteBlock { id: id.clone() }).ok);
     assert!(!call(Request::Quit).ok);
-    assert!(!call(Request::UpdateSettings { start_at_login: false }).ok);
+    assert!(!call(Request::UpdateSettings { start_at_login: Some(false), discord: None }).ok);
     std::thread::sleep(Duration::from_millis(500));
     assert!(svc.try_wait().unwrap().is_none(), "still running");
 

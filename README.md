@@ -1,4 +1,4 @@
-# ProgramPrison
+# Program Prison
 
 A desktop blocker for distracting websites and programs, for Windows, macOS and Linux. Put
 sites and programs in a **block**, switch it on with a timer or a weekly schedule, and lock it so
@@ -15,9 +15,9 @@ Every push builds the app with GitHub Actions (**Actions → Build → Artifacts
 
 | Platform | File |
 |---|---|
-| Windows | `ProgramPrison-<version>-windows-x64.exe`: a single file, no installer |
-| macOS | `ProgramPrison-<version>-macos.zip`: unzip and move `ProgramPrison.app` to Applications |
-| Linux | `ProgramPrison-<version>-linux-x64.tar.gz` |
+| Windows | `Program Prison.exe`: a single file, no installer |
+| macOS | `Program Prison <version> (macOS).zip`: unzip and move `Program Prison.app` to Applications |
+| Linux | `program-prison-<version>-linux-x64.tar.gz` |
 
 Pushing a tag such as `v0.2.0` publishes the same files as a GitHub Release. The builds aren't
 code-signed. On Windows, SmartScreen will warn: choose **More info → Run anyway**. On macOS,
@@ -43,18 +43,21 @@ right-click the app and choose **Open** the first time.
   - *Password*: have someone else set it. Stored as a salted scrypt hash.
   - *Locked*: no way out until time runs out.
   While a block is locked you can **add** sites, programs and hours, but you can't remove them,
-  weaken the lock, delete the block, quit ProgramPrison or turn off start-at-login.
+  weaken the lock, delete the block, quit Program Prison or turn off start-at-login.
+- **Discord status** (optional): while a block is on, your Discord profile shows "Playing Program
+  Prison", the block's name and the time left, counted down by Discord itself. Switch it off
+  in **Settings → Show my blocks on Discord**. It needs the Discord desktop app.
 - **Hard to get around**:
   - Starts at login.
   - Undoes hand edits to the hosts file within seconds.
   - Pushes running blocks back if the clock is moved forward.
-  - Website blocks stay in the hosts file even if ProgramPrison is force-closed.
+  - Website blocks stay in the hosts file even if Program Prison is force-closed.
   - Blocks resume the moment it starts again.
   - It can still be ended from Task Manager in an emergency (see [Emergency exit](#emergency-exit)).
 
 ## How to use it
 
-1. **Put the program somewhere permanent** (for example `Documents\ProgramPrison`) and run it.
+1. **Put the program somewhere permanent** (for example `Documents\Program Prison`) and run it.
    It starts itself at login from wherever it is. The window opens, and an orange bars icon
    appears in the system tray (click **^** near the clock if you don't see it).
 2. **Make a block**: **Create your first block** (later: **+ New block**). Click its name at
@@ -75,18 +78,18 @@ reopen it. Right-click the tray icon for **Quit**, which is disabled while a loc
 
 ### Emergency exit
 
-If you really need out, ProgramPrison can always be ended from **Task Manager** (Ctrl+Shift+Esc;
+If you really need out, Program Prison can always be ended from **Task Manager** (Ctrl+Shift+Esc;
 on macOS, Activity Monitor → Force Quit). Nothing restarts it until you next log in.
 
 - **Programs** are allowed again straight away.
 - **Websites stay blocked** until the block's time is up: they're listed in the system hosts
-  file, which ProgramPrison cleans up the next time it runs after the block has ended.
+  file, which Program Prison cleans up the next time it runs after the block has ended.
 - To keep it from starting again at your next login, open Task Manager → **Startup apps** and
-  disable ProgramPrison.
+  disable Program Prison.
 
 ## How it's built
 
-ProgramPrison is one program that runs in two modes:
+Program Prison is one program that runs in two modes:
 
 - **The background blocker** (`programprison --service`) has no window. It starts at login and
   enforces blocks.
@@ -100,11 +103,11 @@ ProgramPrison is one program that runs in two modes:
   the blocker, which enforces the lock rules. The window talks to the blocker over a local
   connection that only this user's programs can authenticate to.
 
-**Websites:** ProgramPrison writes the blocked domains to the system **hosts file**, between
+**Websites:** Program Prison writes the blocked domains to the system **hosts file**, between
 marker comments, pointing them at `0.0.0.0`. When nothing is blocked, the section is removed.
 
 The first time, the app asks for an administrator password **once**. That lets your user account
-edit the hosts file, so ProgramPrison never has to run as administrator. Each system uses its
+edit the hosts file, so Program Prison never has to run as administrator. Each system uses its
 own tool for this:
 
 - Windows: `icacls`
@@ -124,7 +127,7 @@ On Windows, a program that comes to the front is checked immediately.
 
 This version doesn't defend against:
 
-- someone with administrator rights who edits the hosts file and then kills ProgramPrison
+- someone with administrator rights who edits the hosts file and then kills Program Prison
 - someone who deletes it or its settings file while it isn't running
 
 Other limits:
@@ -135,8 +138,8 @@ Other limits:
 - Hosts files can't do wildcards: subdomains other than `www.`, `m.` and `mobile.` need adding
   separately.
 - Exclusive-fullscreen games draw over covers, so set them to **Close it**.
-- macOS and Linux have no tray icon yet. Open ProgramPrison from your apps; **Settings → Quit
-  ProgramPrison** stops the blocker.
+- macOS and Linux have no tray icon yet. Open Program Prison from your apps; **Settings → Quit
+  Program Prison** stops the blocker.
 
 ## Development
 
@@ -174,7 +177,12 @@ Code layout:
 | `src/hosts.rs`, `src/procs.rs` | Hosts file; listing and closing processes. |
 | `src/ipc.rs` | Window ↔ blocker protocol. |
 | `src/gui.rs` | The settings window. |
+| `src/discord.rs` | Discord status over Discord's local connection (no extra libraries). |
 | `src/autostart.rs` | Start at login (Run key, LaunchAgent, XDG autostart). |
+
+## Logo
+
+`assets/logo.svg` (vector, any size), `assets/logo-1024.png` and `assets/logo-512.png`.
 
 ## Roadmap
 

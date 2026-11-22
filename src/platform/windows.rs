@@ -387,7 +387,7 @@ impl Covers {
 
     /// The covered program was brought to the front: give the keyboard to the cover. Windows
     /// refuses that to background programs at times; then the program is minimized instead.
-    /// Async only, so a frozen blocked program can never freeze ProgramPrison.
+    /// Async only, so a frozen blocked program can never freeze Program Prison.
     fn raise(&mut self, target: HWND) {
         let Some(c) = self.covers.get(&key(target)) else {
             let pid = window_pid(target);
@@ -449,7 +449,7 @@ fn create_cover(pid: u32, label: &Label) -> Option<Cover> {
         let h = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             w!("ProgramPrisonCover"),
-            w!("Blocked by ProgramPrison"),
+            w!("Blocked by Program Prison"),
             WS_POPUP,
             0,
             0,
@@ -495,44 +495,124 @@ unsafe fn draw_text(hdc: HDC, text: &str, size: i32, weight: i32, color: COLORRE
     }
 }
 
+/// Brightness across a steel bar, 0..1 from one edge to the other: a cylinder lit from the
+/// upper left, so each bar has a bright highlight and dark edges.
+fn steel(t: f32) -> COLORREF {
+    let shade = (0.5 + 0.5 * ((t - 0.32) * std::f32::consts::PI * 1.25).cos()).clamp(0.0, 1.0).powf(1.4);
+    let mix = |lo: f32, hi: f32| (lo + (hi - lo) * shade) as u8;
+    rgb(mix(58.0, 228.0), mix(61.0, 232.0), mix(65.0, 236.0))
+}
+
+/// Fills a rectangle with one color, without creating a brush each time.
+unsafe fn fill(hdc: HDC, l: i32, t: i32, r: i32, b: i32, c: COLORREF) {
+    unsafe {
+        SetDCBrushColor(hdc, c);
+        FillRect(hdc, &RECT { left: l, top: t, right: r, bottom: b }, HBRUSH(GetStockObject(DC_BRUSH).0));
+    }
+}
+
+/// The cell: a dark wall, steel bars with shadows behind them, and crossbars top and bottom.
+unsafe fn paint_bars(hdc: HDC, w: i32, h: i32, px: impl Fn(i32) -> i32) {
+    unsafe {
+        // the wall: a little lighter just above the middle
+        let wall = |y: i32| -> (u8, u8, u8) {
+            let t = (1.0 - ((y as f32 / h.max(1) as f32) - 0.45).abs() * 1.2).max(0.0);
+            let c = 0x1a as f32 + 16.0 * t;
+            (c as u8, (c - 2.0) as u8, (c - 5.0) as u8)
+        };
+        let step = 4;
+        let mut y = 0;
+        while y < h {
+            let (r, g, b) = wall(y);
+            fill(hdc, 0, y, w, y + step, rgb(r, g, b));
+            y += step;
+        }
+        let bar_w = px(18);
+        let gap = px(74);
+        let rail = px(20);
+        let (top, bottom) = (px(28).min(h / 4), (h - px(28)).max(h * 3 / 4));
+        let shadow_w = px(10);
+        let darker = |(r, g, b): (u8, u8, u8), a: f32| rgb((r as f32 * (1.0 - a)) as u8, (g as f32 * (1.0 - a)) as u8, (b as f32 * (1.0 - a)) as u8);
+        // Painted back to front: shadows on the wall, then the bars, then the crossbars.
+        let bars: Vec<i32> = (0..).map(|i| px(40) + i * gap).take_while(|&x| x < w).collect();
+        for ry in [top, bottom - rail] {
+            for j in 0..px(8) {
+                let a = 0.4 * (1.0 - j as f32 / px(8) as f32);
+                fill(hdc, 0, ry + rail + j, w, ry + rail + j + 1, darker(wall(ry + rail + j), a));
+            }
+        }
+        for s in 0..shadow_w {
+            let a = 0.4 * (1.0 - s as f32 / shadow_w as f32);
+            let c = darker(wall(h / 2), a);
+            for &x in &bars {
+                fill(hdc, x + bar_w + s, top, x + bar_w + s + 1, bottom, c);
+            }
+        }
+        for i in 0..bar_w {
+            let c = steel(i as f32 / (bar_w - 1).max(1) as f32);
+            for &x in &bars {
+                fill(hdc, x + i, top, x + i + 1, bottom, c);
+            }
+        }
+        for ry in [top, bottom - rail] {
+            for j in 0..rail {
+                fill(hdc, 0, ry + j, w, ry + j + 1, steel(j as f32 / (rail - 1).max(1) as f32));
+            }
+        }
+    }
+}
+
 unsafe extern "system" fn cover_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     unsafe {
         match msg {
             WM_PAINT => {
                 let mut ps = PAINTSTRUCT::default();
-                let hdc = BeginPaint(h, &mut ps);
+                let screen = BeginPaint(h, &mut ps);
                 let mut rc = RECT::default();
                 let _ = GetClientRect(h, &mut rc);
-                let bg = CreateSolidBrush(rgb(0x1d, 0x1b, 0x18));
-                FillRect(hdc, &rc, bg);
-                let _ = DeleteObject(HGDIOBJ(bg.0));
+                let (w, ht) = (rc.right - rc.left, rc.bottom - rc.top);
+                // Draw offscreen, then copy in one go, so the countdown never flickers.
+                let hdc = CreateCompatibleDC(Some(screen));
+                let bmp = CreateCompatibleBitmap(screen, w.max(1), ht.max(1));
+                let old_bmp = SelectObject(hdc, HGDIOBJ(bmp.0));
                 let dpi = GetDpiForWindow(h).max(96) as i32;
-                let px = |v: i32| v * dpi / 96;
-                // faint vertical bars
-                let bar = CreateSolidBrush(rgb(0x26, 0x24, 0x21));
-                let mut x = px(46);
-                while x < rc.right {
-                    let r = RECT { left: x, top: rc.top, right: x + px(6), bottom: rc.bottom };
-                    FillRect(hdc, &r, bar);
-                    x += px(52);
-                }
-                let _ = DeleteObject(HGDIOBJ(bar.0));
-                SetBkMode(hdc, TRANSPARENT);
+                let px = |v: i32| (v * dpi / 96).max(1);
+                paint_bars(hdc, w, ht, px);
+
+                // The text sits on a dark plate so the bars never get in the way of reading it.
                 let label = LABELS.with(|l| l.borrow().get(&key(h)).cloned()).unwrap_or_default();
-                let mid = (rc.top + rc.bottom) / 2;
-                let small = rc.bottom - rc.top < px(160);
-                let mut r1 = RECT { left: rc.left + px(12), top: mid - px(if small { 22 } else { 46 }), right: rc.right - px(12), bottom: mid - px(if small { 2 } else { 14 }) };
-                draw_text(hdc, &format!("{} is blocked", label.app), px(if small { 15 } else { 22 }), 600, rgb(0xef, 0xe9, 0xdf), &mut r1);
+                let small = ht < px(200);
+                let mid = ht / 2;
+                let (pw, ph) = ((w - px(24)).min(px(460)), if small { (ht - px(8)).min(px(70)) } else { px(170) });
+                let plate = RECT { left: (w - pw) / 2, top: mid - ph / 2, right: (w + pw) / 2, bottom: mid + ph / 2 };
+                let pen = CreatePen(PS_SOLID, px(2), rgb(0x6b, 0x4a, 0x35));
+                let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+                let old_brush = SelectObject(hdc, GetStockObject(DC_BRUSH));
+                SetDCBrushColor(hdc, rgb(0x1d, 0x1b, 0x18));
+                let _ = RoundRect(hdc, plate.left, plate.top, plate.right, plate.bottom, px(28), px(28));
+                SelectObject(hdc, old_brush);
+                SelectObject(hdc, old_pen);
+                let _ = DeleteObject(HGDIOBJ(pen.0));
+
+                SetBkMode(hdc, TRANSPARENT);
+                let (l, r) = (plate.left + px(12), plate.right - px(12));
+                let mut r1 = RECT { left: l, top: mid - px(if small { 22 } else { 50 }), right: r, bottom: mid - px(if small { 2 } else { 16 }) };
+                draw_text(hdc, &format!("{} is blocked", label.app), px(if small { 15 } else { 24 }), 700, rgb(0xef, 0xe9, 0xdf), &mut r1);
                 if !small {
-                    let mut r2 = RECT { left: rc.left + px(12), top: mid - px(10), right: rc.right - px(12), bottom: mid + px(14) };
+                    let mut r2 = RECT { left: l, top: mid - px(10), right: r, bottom: mid + px(14) };
                     draw_text(hdc, &format!("by “{}”", label.block), px(15), 400, rgb(0xb9, 0xb0, 0xa2), &mut r2);
                 }
                 let left = match label.until {
                     Some(t) => fmt_left(t - engine::now_ms()),
                     None => "Blocked on a schedule".into(),
                 };
-                let mut r3 = RECT { left: rc.left + px(12), top: mid + px(if small { 2 } else { 22 }), right: rc.right - px(12), bottom: mid + px(if small { 22 } else { 48 }) };
-                draw_text(hdc, &left, px(15), 600, rgb(0xf0, 0xa3, 0x5e), &mut r3);
+                let mut r3 = RECT { left: l, top: mid + px(if small { 2 } else { 24 }), right: r, bottom: mid + px(if small { 22 } else { 52 }) };
+                draw_text(hdc, &left, px(16), 700, rgb(0xf0, 0xa3, 0x5e), &mut r3);
+
+                let _ = BitBlt(screen, 0, 0, w, ht, Some(hdc), 0, 0, SRCCOPY);
+                SelectObject(hdc, old_bmp);
+                let _ = DeleteObject(HGDIOBJ(bmp.0));
+                let _ = DeleteDC(hdc);
                 let _ = EndPaint(h, &ps);
                 LRESULT(0)
             }
@@ -573,7 +653,7 @@ impl Ui {
             let work = s.enforce(force);
             let now = engine::now_ms();
             let active: Vec<String> = s.state.blocks.iter().filter(|b| b.is_active(now)).map(|b| b.name.clone()).collect();
-            let tip = if active.is_empty() { "ProgramPrison: no blocks on".to_string() } else { format!("ProgramPrison: {} on", active.join(", ")) };
+            let tip = if active.is_empty() { "Program Prison: no blocks on".to_string() } else { format!("Program Prison: {} on", active.join(", ")) };
             (work, s.any_locked(), tip)
         };
         let _ = locked;
@@ -672,7 +752,7 @@ impl Ui {
         let locked = self.svc.lock().unwrap().any_locked();
         unsafe {
             let Ok(menu) = CreatePopupMenu() else { return };
-            let _ = AppendMenuW(menu, MF_STRING, MENU_OPEN, w!("Open ProgramPrison"));
+            let _ = AppendMenuW(menu, MF_STRING, MENU_OPEN, w!("Open Program Prison"));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let quit = if locked { w!("Quit (a locked block is on)") } else { w!("Quit") };
             let _ = AppendMenuW(menu, if locked { MF_STRING | MF_GRAYED } else { MF_STRING }, MENU_QUIT, quit);
@@ -797,7 +877,7 @@ pub fn run_service() {
         RegisterClassW(&cc);
         TASKBAR_CREATED.store(RegisterWindowMessageW(w!("TaskbarCreated")) as isize, Ordering::SeqCst);
         // A hidden top-level window (not message-only, so it gets power and taskbar broadcasts).
-        let Ok(hwnd) = CreateWindowExW(WINDOW_EX_STYLE(0), w!("ProgramPrisonMain"), w!("ProgramPrison"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, Some(inst), None) else {
+        let Ok(hwnd) = CreateWindowExW(WINDOW_EX_STYLE(0), w!("ProgramPrisonMain"), w!("Program Prison"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, Some(inst), None) else {
             util::debug("could not create the main window");
             return;
         };
@@ -824,7 +904,7 @@ pub fn run_service() {
             svc: svc.clone(),
             covers: Covers::default(),
             hwnd,
-            tray_tip: "ProgramPrison".into(),
+            tray_tip: "Program Prison".into(),
             tray_icon: icon,
             close: vec![],
             cover: vec![],
@@ -868,5 +948,42 @@ fn covers_snapshot() -> Response {
     match covers {
         Some(c) => Response { ok: true, covers: Some(c), ..Default::default() },
         None => Response::err("main thread busy"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Draws the cover's bars offscreen and checks real pixels: bright steel, a dark wall, and
+    /// shadows darker than the wall.
+    #[test]
+    fn cover_bars_stand_out() {
+        unsafe {
+            let screen = GetDC(None);
+            let hdc = CreateCompatibleDC(Some(screen));
+            let bmp = CreateCompatibleBitmap(screen, 600, 400);
+            let old = SelectObject(hdc, HGDIOBJ(bmp.0));
+            paint_bars(hdc, 600, 400, |v| v); // 96 dpi
+            let lum = |x: i32, y: i32| {
+                let c = GetPixel(hdc, x, y).0;
+                ((c & 0xff) + ((c >> 8) & 0xff) + ((c >> 16) & 0xff)) / 3
+            };
+            let highlight = lum(40 + 6, 200); // a third of the way across the first bar
+            let wall = lum(40 + 18 + 30, 200); // between two bars
+            let shadow = lum(40 + 18 + 1, 200); // just right of a bar
+            let rail = lum(300, 28 + 6); // the top crossbar
+            let under_rail = lum(40 + 6, 28 + 20 + 2); // a bar just below the crossbar: still bright
+            SelectObject(hdc, old);
+            let _ = DeleteObject(HGDIOBJ(bmp.0));
+            let _ = DeleteDC(hdc);
+            ReleaseDC(None, screen);
+            assert!(highlight > 180, "bar highlight {highlight}");
+            assert!(wall < 60, "wall {wall}");
+            assert!(highlight - wall > 140, "contrast {highlight} vs {wall}");
+            assert!(shadow < wall, "shadow {shadow} darker than wall {wall}");
+            assert!(rail > 120, "crossbar {rail}");
+            assert!(under_rail > 150, "bars aren't cut by the crossbar shadow: {under_rail}");
+        }
     }
 }
