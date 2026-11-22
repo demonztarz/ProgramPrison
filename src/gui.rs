@@ -1462,6 +1462,22 @@ pub fn setup_style(ctx: &egui::Context) {
     }
 }
 
+/// Graphics settings for a small window that's mostly idle:
+/// - the power-saving graphics chip: on laptops with two, drawing on the separate chip and
+///   copying every frame to the built-in one makes dragging the window stutter;
+/// - DirectX 12 on Windows: Vulkan windows can stutter while being moved there;
+/// - low latency: at most one frame queued, so the window keeps up with the mouse.
+fn graphics_options() -> eframe::WgpuConfiguration {
+    use eframe::egui_wgpu::{WgpuSetup, WgpuSetupCreateNew};
+    use eframe::wgpu;
+    let mut setup = WgpuSetupCreateNew::without_display_handle();
+    setup.power_preference = wgpu::PowerPreference::from_env().unwrap_or(wgpu::PowerPreference::LowPower);
+    if cfg!(windows) && wgpu::Backends::from_env().is_none() {
+        setup.instance_descriptor.backends = wgpu::Backends::DX12;
+    }
+    eframe::WgpuConfiguration { surface: eframe::SurfaceConfig::LOW_LATENCY, wgpu_setup: WgpuSetup::CreateNew(setup), ..Default::default() }
+}
+
 /// Held while a settings window is open. The system releases it if the window crashes.
 fn window_lock() -> Option<std::fs::File> {
     let dir = crate::util::data_dir();
@@ -1522,6 +1538,7 @@ pub fn run(smoke_out: Option<String>) {
             .with_inner_size([1040.0, 720.0])
             .with_min_inner_size([760.0, 540.0])
             .with_icon(egui::IconData { rgba: icon_rgba(64), width: 64, height: 64 }),
+        wgpu_options: graphics_options(),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -1529,6 +1546,12 @@ pub fn run(smoke_out: Option<String>) {
         options,
         Box::new(move |cc| {
             setup_style(&cc.egui_ctx);
+            if let Some(rs) = &cc.wgpu_render_state {
+                let i = rs.adapter.get_info();
+                crate::util::log(format!("window: drawing with {:?} on {} ({:?})", i.backend, i.name, i.device_type));
+            } else {
+                crate::util::log("window: drawing with OpenGL");
+            }
             let mut app = PrisonApp::with_background_poll(conn, &cc.egui_ctx);
             app.smoke = smoke_out.map(|out| Smoke { out, started, connected_ms });
             Ok(Box::new(app))
