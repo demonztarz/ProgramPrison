@@ -137,7 +137,17 @@ mod tests {
             std::fs::copy("/bin/sleep", &exe).unwrap();
         }
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let mut child = std::process::Command::new(&exe).arg("30").spawn().unwrap();
+        // Another test starting a program at the same moment can briefly keep the new script
+        // "busy" (ETXTBSY); try again for a moment.
+        let mut child = (0..50)
+            .find_map(|_| match std::process::Command::new(&exe).arg("30").spawn() {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    None
+                }
+                r => Some(r.unwrap()),
+            })
+            .expect("script stayed busy");
         std::thread::sleep(std::time::Duration::from_millis(300));
         let apps = vec!["timewaster".to_string()];
         let found: Vec<_> = super::list().into_iter().filter(|p| crate::engine::app_matches(&p.names, &apps)).collect();
