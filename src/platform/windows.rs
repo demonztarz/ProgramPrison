@@ -36,6 +36,7 @@ const WM_APP_SNAPSHOT: u32 = WM_APP + 4; // tests: copy cover positions into COV
 static COVER_SNAP: Mutex<Option<Vec<CoverInfo>>> = Mutex::new(None);
 const TIMER_TICK: usize = 1;
 const TIMER_COUNTDOWN: usize = 2;
+const TIMER_RETRY: usize = 3; // work that arrived while busy, tried again shortly
 const MENU_OPEN: usize = 1;
 const MENU_QUIT: usize = 2;
 
@@ -736,27 +737,47 @@ impl Ui {
         }
     }
 
-    fn tray_menu(&mut self) {
-        let locked = self.svc.lock().unwrap().any_locked();
-        unsafe {
-            let Ok(menu) = CreatePopupMenu() else { return };
-            let _ = AppendMenuW(menu, MF_STRING, MENU_OPEN, w!("Open Program Prison"));
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let quit = if locked { w!("Quit (a locked block is on)") } else { w!("Quit") };
-            let _ = AppendMenuW(menu, if locked { MF_STRING | MF_GRAYED } else { MF_STRING }, MENU_QUIT, quit);
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let _ = SetForegroundWindow(self.hwnd); // so the menu closes when clicking elsewhere
-            let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, Some(0), self.hwnd, None);
-            let _ = DestroyMenu(menu);
-            match cmd.0 as usize {
-                MENU_OPEN => super::spawn_window(),
-                MENU_QUIT if !locked => {
-                    self.svc.lock().unwrap().quit_requested = true;
-                    PostQuitMessage(0);
-                }
-                _ => {}
+}
+
+/// The tray icon's menu. Runs with nothing borrowed: while a menu is open Windows keeps
+/// delivering timer and window messages, and they must be able to do their work.
+fn show_tray_menu(hwnd: HWND) {
+    let locked = UI.with(|u| u.try_borrow().ok().and_then(|g| g.as_ref().map(|ui| ui.svc.lock().unwrap().any_locked()))).unwrap_or(true);
+    unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return };
+        let _ = AppendMenuW(menu, MF_STRING, MENU_OPEN, w!("Open Program Prison"));
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let quit = if locked { w!("Quit (a locked block is on)") } else { w!("Quit") };
+        let _ = AppendMenuW(menu, if locked { MF_STRING | MF_GRAYED } else { MF_STRING }, MENU_QUIT, quit);
+        let mut pt = POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        let _ = SetForegroundWindow(hwnd); // so the menu closes when clicking elsewhere
+        let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, Some(0), hwnd, None);
+        let _ = DestroyMenu(menu);
+        // Required after a tray menu, or it can stay stuck open (Microsoft KB 135788).
+        let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
+        match cmd.0 as usize {
+            MENU_OPEN => super::spawn_window(),
+            MENU_QUIT if !locked => {
+                with_ui(|ui| ui.svc.lock().unwrap().quit_requested = true);
+                PostQuitMessage(0);
             }
+            _ => {}
+        }
+    }
+}
+
+static RETRY_ENFORCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RETRY_EVENTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Busy right now (re-entered from inside other work): try again in 50 ms rather than
+/// re-posting straight away, which would spin.
+fn retry_later(flag: &std::sync::atomic::AtomicBool) {
+    flag.store(true, Ordering::SeqCst);
+    let h = MAIN_HWND.load(Ordering::SeqCst);
+    if h != 0 {
+        unsafe {
+            SetTimer(Some(hwnd_of(h)), TIMER_RETRY, 50, None);
         }
     }
 }
@@ -780,19 +801,29 @@ unsafe extern "system" fn main_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -
         match msg {
             WM_TIMER if wp.0 == TIMER_TICK => {
                 if !with_ui(|ui| ui.enforce(false)) {
-                    post(WM_APP_ENFORCE);
+                    retry_later(&RETRY_ENFORCE);
+                }
+                LRESULT(0)
+            }
+            WM_TIMER if wp.0 == TIMER_RETRY => {
+                let _ = KillTimer(Some(h), TIMER_RETRY);
+                if RETRY_ENFORCE.swap(false, Ordering::SeqCst) && !with_ui(|ui| ui.enforce(true)) {
+                    retry_later(&RETRY_ENFORCE);
+                }
+                if RETRY_EVENTS.swap(false, Ordering::SeqCst) && !with_ui(|ui| ui.drain_events()) {
+                    retry_later(&RETRY_EVENTS);
                 }
                 LRESULT(0)
             }
             WM_APP_ENFORCE => {
                 if !with_ui(|ui| ui.enforce(true)) {
-                    post(WM_APP_ENFORCE);
+                    retry_later(&RETRY_ENFORCE);
                 }
                 LRESULT(0)
             }
             WM_APP_EVENTS => {
                 if !with_ui(|ui| ui.drain_events()) {
-                    post(WM_APP_EVENTS);
+                    retry_later(&RETRY_EVENTS);
                 }
                 LRESULT(0)
             }
@@ -803,9 +834,7 @@ unsafe extern "system" fn main_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -
             WM_APP_TRAY => {
                 match (lp.0 as u32) & 0xffff {
                     WM_LBUTTONUP => super::spawn_window(),
-                    WM_RBUTTONUP | WM_CONTEXTMENU => {
-                        with_ui(|ui| ui.tray_menu());
-                    }
+                    WM_RBUTTONUP | WM_CONTEXTMENU => show_tray_menu(h),
                     _ => {}
                 }
                 LRESULT(0)
